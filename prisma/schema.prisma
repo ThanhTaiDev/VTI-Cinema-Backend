@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+ 
+model User {
+  id        String   @id @default(cuid())
+  uid       String   @unique @default(uuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  password  String
+  role      String   @default("USER")
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+}
+
+model Cinema {
+  id        String @id @default(cuid())
+  name      String
+  region    String
+  address   String
+  latitude  Float?
+  longitude Float?
+  logoUrl   String?
+  phone     String?
+}
+
+model Movie {
+  id          String   @id @default(cuid())
+  title       String
+  actors      String?
+  duration    Int
+  genres      String?
+  releaseDate DateTime?
+  rating      Float?
+  description String?
+  posterUrl   String?
+}
+
+model Screening {
+  id        String   @id @default(cuid())
+  movieId   String
+  cinemaId  String
+  room      String
+  startTime DateTime
+  endTime   DateTime
+  price     Int
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  movieId   String
+  userId    String
+  rating    Int
+  content   String?
+  tags      String?
+  createdAt DateTime @default(now())
+}
+
+model Ticket {
+  id         String   @id @default(cuid())
+  code       String   @unique @default(uuid())
+  screeningId String
+  seatRow    String
+  seatCol    String
+  userId     String
+  status     String   @default("PENDING")
+  price      Int
+  createdAt  DateTime @default(now())
+}
+
+model Payment {
+  id         String   @id @default(cuid())
+  ticketId   String
+  amount     Int
+  method     String
+  status     String
+  externalRef String?
+  createdAt  DateTime @default(now())
+}
