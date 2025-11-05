@@ -31,6 +31,7 @@ exports.login = async (data) => {
   if (!email || !password) throw new Error('Email and password required');
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) throw new Error('User not found');
+  if (user.status !== 'ACTIVE') throw new Error('Account is not active');
   const match = await bcrypt.compare(password, user.password);
   if (!match) throw new Error('Invalid credentials');
   const token = jwt.sign({ sub: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET || 'dev', { expiresIn: '1h' });
@@ -45,4 +46,21 @@ exports.forgotPassword = async (data) => {
 exports.resetPassword = async (data) => {
   // placeholder: validate token and update password
   return true;
+};
+
+exports.getCurrentUser = async (userId) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      uid: true,
+      name: true,
+      email: true,
+      phone: true,
+      role: true,
+      status: true,
+      createdAt: true,
+    },
+  });
+  return user;
 };
