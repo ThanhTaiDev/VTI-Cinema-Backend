@@ -1,28 +1,42 @@
 const prisma = require('../prismaClient');
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
 
-// Helper: Convert to Vietnam timezone
-const toVietnamTime = (date) => {
-  if (!date) return null;
-  const d = new Date(date);
-  // Vietnam is UTC+7
-  return new Date(d.getTime() + (7 * 60 * 60 * 1000));
-};
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const TZ = 'Asia/Ho_Chi_Minh';
 
 // Helper: Build where clause for filters
 const buildWhereClause = (params) => {
   const where = {};
   
-  // Date range filter
+  // Date range filter (Vietnam timezone UTC+7)
   if (params.fromDate || params.toDate) {
     where.createdAt = {};
     if (params.fromDate) {
-      const fromDate = new Date(params.fromDate);
-      fromDate.setHours(0, 0, 0, 0);
+      // Parse ISO string with offset (e.g., 2025-11-07T00:00:00+07:00) or YYYY-MM-DD
+      let fromDate;
+      if (params.fromDate.includes('T') || params.fromDate.includes('+')) {
+        // ISO string with offset
+        fromDate = dayjs(params.fromDate).toDate();
+      } else {
+        // YYYY-MM-DD format, convert to Vietnam timezone
+        fromDate = dayjs.tz(params.fromDate + 'T00:00:00', TZ).toDate();
+      }
       where.createdAt.gte = fromDate;
     }
     if (params.toDate) {
-      const toDate = new Date(params.toDate);
-      toDate.setHours(23, 59, 59, 999);
+      // Parse ISO string with offset (e.g., 2025-11-07T23:59:59+07:00) or YYYY-MM-DD
+      let toDate;
+      if (params.toDate.includes('T') || params.toDate.includes('+')) {
+        // ISO string with offset
+        toDate = dayjs(params.toDate).toDate();
+      } else {
+        // YYYY-MM-DD format, convert to Vietnam timezone
+        toDate = dayjs.tz(params.toDate + 'T23:59:59.999', TZ).toDate();
+      }
       where.createdAt.lte = toDate;
     }
   }
@@ -218,7 +232,7 @@ exports.getStats = async (params = {}) => {
   };
 };
 
-// Get daily revenue
+// Get daily revenue with proper date range
 exports.getDailyRevenue = async (params = {}) => {
   const where = buildWhereClause(params);
 
@@ -253,12 +267,44 @@ exports.getDailyRevenue = async (params = {}) => {
     }
   });
 
-  // Group by date (Vietnam timezone)
+  // Generate date range
+  let startDate, endDate;
+  if (params.fromDate && params.toDate) {
+    startDate = new Date(params.fromDate);
+    endDate = new Date(params.toDate);
+  } else if (params.fromDate) {
+    startDate = new Date(params.fromDate);
+    endDate = new Date();
+  } else if (params.toDate) {
+    endDate = new Date(params.toDate);
+    startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000); // Default to 30 days back
+  } else {
+    // Default to last 30 days
+    endDate = new Date();
+    startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+  }
+
+  // Initialize all dates in range with 0
   const dailyData = {};
-  
+  const currentDate = new Date(startDate);
+  while (currentDate <= endDate) {
+    const dateKey = currentDate.toISOString().split('T')[0];
+    dailyData[dateKey] = {
+      date: dateKey,
+      grossRevenue: 0,
+      netRevenue: 0,
+      fees: 0,
+      orders: new Set(),
+      tickets: 0,
+      refunds: 0
+    };
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  // Group payments by date (Vietnam timezone)
   payments.forEach((payment) => {
     const date = new Date(payment.createdAt);
-    // Convert to Vietnam timezone
+    // Convert to Vietnam timezone (UTC+7)
     const vietnamDate = new Date(date.getTime() + (7 * 60 * 60 * 1000));
     const dateKey = vietnamDate.toISOString().split('T')[0];
     
@@ -305,29 +351,38 @@ exports.getDailyRevenue = async (params = {}) => {
 
 // Get comparison stats (WoW/DoD/YoY)
 exports.getComparisonStats = async (params = {}) => {
-  const { period = 'day', compareWith = 'previous' } = params;
+  const { period = 'day' } = params;
   
   // Current period
   const currentStats = await exports.getStats(params);
   
-  // Previous period
+  // Previous period - calculate date range shift
   let previousParams = { ...params };
-  const fromDate = params.fromDate ? new Date(params.fromDate) : new Date();
-  const toDate = params.toDate ? new Date(params.toDate) : new Date();
+  delete previousParams.period; // Remove period from filters
   
-  let daysDiff = 0;
-  if (period === 'day') {
-    daysDiff = 1;
-  } else if (period === 'week') {
-    daysDiff = 7;
-  } else if (period === 'month') {
-    daysDiff = 30;
-  } else if (period === 'year') {
-    daysDiff = 365;
+  // Calculate date range for current period
+  let fromDate, toDate;
+  if (params.fromDate && params.toDate) {
+    fromDate = new Date(params.fromDate);
+    toDate = new Date(params.toDate);
+  } else if (params.fromDate) {
+    fromDate = new Date(params.fromDate);
+    toDate = new Date();
+  } else if (params.toDate) {
+    toDate = new Date(params.toDate);
+    fromDate = new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+  } else {
+    // Default to last 30 days
+    toDate = new Date();
+    fromDate = new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
   }
-
-  previousParams.fromDate = new Date(fromDate.getTime() - (daysDiff * 24 * 60 * 60 * 1000));
-  previousParams.toDate = new Date(toDate.getTime() - (daysDiff * 24 * 60 * 60 * 1000));
+  
+  // Calculate period length
+  const periodLength = toDate.getTime() - fromDate.getTime();
+  
+  // Shift dates back by period length
+  previousParams.toDate = new Date(fromDate.getTime() - 1).toISOString().split('T')[0];
+  previousParams.fromDate = new Date(fromDate.getTime() - periodLength).toISOString().split('T')[0];
   
   const previousStats = await exports.getStats(previousParams);
 
@@ -386,22 +441,29 @@ exports.getDetailedRevenue = async (params = {}) => {
     }
   });
 
-  return payments.map(payment => ({
-    orderId: payment.orderId,
-    paymentId: payment.id,
-    movie: payment.order?.screening?.movie?.title || 'N/A',
-    cinema: payment.order?.screening?.cinema?.name || 'N/A',
-    screening: payment.order?.screeningId,
-    screeningTime: payment.order?.screening?.startTime,
-    ticketCount: payment.order?.tickets?.length || 0,
-    gross: payment.amount || 0,
-    fee: payment.fee || 0,
-    net: payment.netAmount || (payment.amount || 0) - (payment.fee || 0),
-    method: payment.method,
-    status: payment.status,
-    source: payment.source || 'web',
-    createdAt: payment.createdAt
-  }));
+  return payments.map(payment => {
+    const netAmount = payment.netAmount !== null && payment.netAmount !== undefined
+      ? payment.netAmount
+      : (payment.amount || 0) - (payment.fee || 0);
+    
+    return {
+      date: new Date(payment.createdAt).toISOString().split('T')[0],
+      orderId: payment.orderId,
+      paymentId: payment.id,
+      movie: payment.order?.screening?.movie?.title || 'N/A',
+      cinema: payment.order?.screening?.cinema?.name || 'N/A',
+      screening: payment.order?.screeningId,
+      screeningTime: payment.order?.screening?.startTime,
+      ticketCount: payment.order?.tickets?.length || 0,
+      gross: payment.amount || 0,
+      fee: payment.fee || 0,
+      net: netAmount,
+      method: payment.method,
+      status: payment.status,
+      source: payment.source || 'web',
+      createdAt: payment.createdAt
+    };
+  });
 };
 
 // Get settlement data by payment gateway
@@ -426,7 +488,9 @@ exports.getSettlement = async (params = {}) => {
         totalAmount: 0,
         totalFees: 0,
         netAmount: 0,
-        count: 0
+        count: 0,
+        firstDate: payment.createdAt,
+        lastDate: payment.createdAt
       };
     }
     
@@ -437,7 +501,133 @@ exports.getSettlement = async (params = {}) => {
       : (payment.amount || 0) - (payment.fee || 0);
     settlement[method].netAmount += netAmount;
     settlement[method].count += 1;
+    
+    // Track date range
+    if (new Date(payment.createdAt) < new Date(settlement[method].firstDate)) {
+      settlement[method].firstDate = payment.createdAt;
+    }
+    if (new Date(payment.createdAt) > new Date(settlement[method].lastDate)) {
+      settlement[method].lastDate = payment.createdAt;
+    }
   });
 
   return Object.values(settlement);
+};
+
+// Get top movies by revenue
+exports.getTopMovies = async (params = {}, limit = 5) => {
+  const where = buildWhereClause(params);
+
+  const payments = await prisma.payment.findMany({
+    where: {
+      ...where,
+      status: { in: ['PAID', 'SUCCESS'] }
+    },
+    include: {
+      order: {
+        include: {
+          screening: {
+            include: {
+              movie: true
+            }
+          },
+          tickets: true
+        }
+      }
+    }
+  });
+
+  // Group by movie
+  const movieStats = {};
+  
+  payments.forEach(payment => {
+    const movieId = payment.order?.screening?.movieId;
+    const movie = payment.order?.screening?.movie;
+    
+    if (movieId && movie) {
+      if (!movieStats[movieId]) {
+        movieStats[movieId] = {
+          movieId,
+          movieTitle: movie.title,
+          revenue: 0,
+          tickets: 0,
+          orders: new Set()
+        };
+      }
+      
+      movieStats[movieId].revenue += payment.amount || 0;
+      movieStats[movieId].tickets += payment.order?.tickets?.length || 0;
+      movieStats[movieId].orders.add(payment.orderId);
+    }
+  });
+
+  return Object.values(movieStats)
+    .map(m => ({
+      ...m,
+      orders: m.orders.size
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, limit);
+};
+
+// Get revenue by cinema
+exports.getRevenueByCinema = async (params = {}) => {
+  const where = buildWhereClause(params);
+
+  const payments = await prisma.payment.findMany({
+    where: {
+      ...where,
+      status: { in: ['PAID', 'SUCCESS'] }
+    },
+    include: {
+      order: {
+        include: {
+          screening: {
+            include: {
+              movie: true
+            }
+          },
+          tickets: true
+        }
+      }
+    }
+  });
+
+  // Fetch cinemas
+  const cinemaIds = [...new Set(payments.map(p => p.order?.screening?.cinemaId).filter(Boolean))];
+  const cinemas = cinemaIds.length > 0 ? await prisma.cinema.findMany({
+    where: { id: { in: cinemaIds } }
+  }) : [];
+  const cinemaMap = new Map(cinemas.map(c => [c.id, c]));
+
+  // Group by cinema
+  const cinemaStats = {};
+  
+  payments.forEach(payment => {
+    const cinemaId = payment.order?.screening?.cinemaId;
+    const cinema = cinemaMap.get(cinemaId);
+    
+    if (cinemaId && cinema) {
+      if (!cinemaStats[cinemaId]) {
+        cinemaStats[cinemaId] = {
+          cinemaId,
+          cinemaName: cinema.name,
+          revenue: 0,
+          tickets: 0,
+          orders: new Set()
+        };
+      }
+      
+      cinemaStats[cinemaId].revenue += payment.amount || 0;
+      cinemaStats[cinemaId].tickets += payment.order?.tickets?.length || 0;
+      cinemaStats[cinemaId].orders.add(payment.orderId);
+    }
+  });
+
+  return Object.values(cinemaStats)
+    .map(c => ({
+      ...c,
+      orders: c.orders.size
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
 };

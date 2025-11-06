@@ -9,6 +9,8 @@ router.get('/daily', authenticate, requireAdmin, revenueController.getDailyReven
 router.get('/comparison', authenticate, requireAdmin, revenueController.getComparison);
 router.get('/detailed', authenticate, requireAdmin, revenueController.getDetailed);
 router.get('/settlement', authenticate, requireAdmin, revenueController.getSettlement);
+router.get('/top-movies', authenticate, requireAdmin, revenueController.getTopMovies);
+router.get('/by-cinema', authenticate, requireAdmin, revenueController.getRevenueByCinema);
 router.get('/export', authenticate, requireAdmin, revenueController.exportReport);
 
 module.exports = router;

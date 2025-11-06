@@ -45,31 +45,52 @@ exports.getSettlement = async (req, res, next) => {
   }
 };
 
+exports.getTopMovies = async (req, res, next) => {
+  try {
+    const limit = parseInt(req.query.limit) || 5;
+    const data = await revenueService.getTopMovies(req.query, limit);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.getRevenueByCinema = async (req, res, next) => {
+  try {
+    const data = await revenueService.getRevenueByCinema(req.query);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.exportReport = async (req, res, next) => {
   try {
     const data = await revenueService.getDetailedRevenue(req.query);
     const format = req.query.format || 'csv';
     
     if (format === 'csv') {
-      // CSV export
-      const headers = ['Order ID', 'Payment ID', 'Movie', 'Cinema', 'Screening Time', 'Tickets', 'Gross (VND)', 'Fee (VND)', 'Net (VND)', 'Method', 'Status', 'Source', 'Created At'];
+      // CSV export with detailed structure
+      const headers = ['Ngày', 'Phim', 'Rạp', 'Vé bán', 'Gross (VND)', 'Fee (VND)', 'Net (VND)', 'Refund (VND)', 'Phương thức', 'Trạng thái', 'Nguồn', 'Order ID', 'Payment ID', 'Thời gian suất chiếu', 'Ngày tạo'];
       const rows = data.map(d => [
-        d.orderId,
-        d.paymentId,
+        d.date || new Date(d.createdAt).toISOString().split('T')[0],
         d.movie,
         d.cinema,
-        d.screeningTime ? new Date(d.screeningTime).toLocaleString('vi-VN') : 'N/A',
         d.ticketCount,
         d.gross,
         d.fee,
         d.net,
+        d.status === 'REFUNDED' ? d.gross : 0,
         d.method,
         d.status,
         d.source,
+        d.orderId,
+        d.paymentId,
+        d.screeningTime ? new Date(d.screeningTime).toLocaleString('vi-VN') : 'N/A',
         new Date(d.createdAt).toLocaleString('vi-VN')
       ]);
       
-      const csv = [headers.join(','), ...rows.map(r => r.map(cell => `"${cell}"`).join(','))].join('\n');
+      const csv = [headers.join(','), ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))].join('\n');
       
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="revenue-report-${new Date().toISOString().split('T')[0]}.csv"`);
