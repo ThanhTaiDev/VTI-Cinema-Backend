@@ -516,52 +516,163 @@ async function main() {
   console.log('🎉 Creating events...');
   const events = [
     {
-      title: 'SNACK ĐỦ VỊ - PHIM HAY HẾT Ý',
-      slug: 'snack-du-vi-phim-hay-het-y',
-      description: 'Khuyến mãi đặc biệt: Mua snack giảm giá 25K khi mua vé xem phim. Áp dụng từ 01.06.2025',
-      content: '<p>Thưởng thức các món snack đa dạng từ các thương hiệu nổi tiếng như Karamucho, Koimucho, Gokochi với giá ưu đãi chỉ 25K khi mua vé xem phim.</p><p>Áp dụng cho tất cả các suất chiếu trong tháng 6/2025.</p>',
+      title: 'MUA HOẶC NẠP THẺ QUÀ TẶNG, TẶNG LƯỢT CHƠI GẤP THÚ',
+      slug: 'mua-hoac-nap-the-qua-tang-tang-luot-choi-gap-thu',
+      description: 'Tặng lượt chơi gấp thú khi mua hoặc nạp Thẻ Quà Tặng CGV mới tại quầy. Thời gian: 01/10/2025 - 31/12/2025',
+      content: `<h3>Thời gian: 01/10/2025 - 31/12/2025</h3>
+<p>Tặng lượt chơi gấp thú khi mua hoặc nạp Thẻ Quà Tặng CGV mới tại quầy</p>
+<ul>
+  <li>Mua hoặc nạp Thẻ Quà Tặng CGV giá trị 200,000VND/ thẻ → Sẽ được tặng 02 lượt chơi gấp thú bông miễn phí</li>
+  <li>Mua hoặc nạp Thẻ Quà Tặng CGV giá trị 400,000VND/ thẻ → Sẽ được tặng 04 lượt chơi gấp thú bông miễn phí</li>
+  <li>Mua hoặc nạp Thẻ Quà Tặng CGV giá trị 600,000VND/ thẻ → Sẽ được tặng 06 lượt chơi gấp thú bông miễn phí</li>
+</ul>
+<h4>Cơ hội gấp trúng các quà tặng hấp dẫn độc quyền của CGV gồm:</h4>
+<ul>
+  <li>Gấu bông CGV</li>
+  <li>Thẻ quà tặng 50,000 VND</li>
+  <li>Vé xem phim 2D</li>
+  <li>Coupon My Combo</li>
+  <li>Coupon CGV Combo</li>
+</ul>
+<h4>Áp dụng tại các rạp CGV sau:</h4>
+<ul>
+  <li>CGV Aeon Bình Tân</li>
+  <li>CGV Aeon Mall Tân Phú</li>
+  <li>CGV Sư Vạn Hạnh</li>
+  <li>CGV Vincom Landmark</li>
+  <li>CGV Vincom Thủ Đức</li>
+  <li>CGV Giga Mall Thủ Đức</li>
+  <li>CGV Vincom Royal City</li>
+  <li>CGV Vincom Times City</li>
+  <li>CGV Aeon Hà Đông</li>
+  <li>CGV Aeon Mall Canary</li>
+  <li>CGV Bình Dương Square</li>
+</ul>
+<p><strong>* Phiếu lượt chơi Máy Gấp Thú CGV được in kèm với hóa đơn khi hoàn tất giao dịch mua Thẻ Quà Tặng hoặc nạp tiền.</strong></p>
+<p><strong>* Phiếu lượt chơi Máy Gấp Thú CGV chỉ có giá trị trong ngày giao dịch.</strong></p>
+<p><strong>* Quét mã trò chơi tại Máy Gấp Thú CGV và chơi để nhận quà.</strong></p>`,
+      imageUrl: 'https://www.cgv.vn/media/wysiwyg/2025/092025/350x496.jpg',
+      thumbnailUrl: 'https://www.cgv.vn/media/wysiwyg/2025/092025/350x496.jpg',
+      startDate: new Date('2025-10-01'),
+      endDate: new Date('2025-12-31'),
+      status: 'ACTIVE',
+      isFeatured: true,
+    },
+    {
+      title: 'Snack Đủ Vị - Xem Phim Hay Hết Ý',
+      slug: 'snack-du-vi-xem-phim-hay-het-y',
+      description: 'Bạn là tín đồ yêu điện ảnh, bạn cũng đam mê các món snack giòn tan, đậm đà và thật tuyệt vời khi nhâm nhi snack trong lúc thường thức những thước phim.',
+      content: `<p>Bạn là tín đồ yêu điện ảnh, bạn cũng đam mê các món snack giòn tan, đậm đà và thật tuyệt vời khi nhâm nhi snack trong lúc thường thức những thước phim.</p>
+<p>Hãy để Galaxy Cinema mang đến nhiều lựa chọn hơn cho bạn với các dòng snack đình đám đến từ Koikeya: Karamucho, Koimucho và Gokochi giúp từng khoảnh khắc xem phim của bạn thêm đậm đà, cuốn rũ đến phút cuối cùng.</p>
+<p>Snack của Koikeya có nhiều hương vị khác nhau để các Stars thoải mái lựa chọn và thưởng thức trọn vị ngon đến từ Nhật Bản.</p>
+<h4>Karamucho – Snack khoai tây giòn rụm, chuẩn vị cay dành cho team mê đậm đà.</h4>
+<ul>
+  <li>Vị cay đặc biệt bùng nổ vị giác với sự hòa quyện giữa chua, cay, mặn, ngọt và độ nồng của ớt.</li>
+  <li>Vị sốt cay ngọt Hàn Quốc đậm vị với hương sốt Yangyeom cực bắt miệng.</li>
+  <li>Vị rong biển cay kết hợp giữa rong biển thơm lừng và khoai tây giòn rụm khiến bạn cuốn hút đến lát cuối cùng.</li>
+</ul>
+<h4>Koimucho - Snack bắp giòn tan, ngọt dịu, cực kỳ dễ gây nghiện.</h4>
+<ul>
+  <li>Vị bơ tỏi thơm lừng, cuốn hút ngay từ miếng đầu tiên.</li>
+  <li>Vị bơ mật ong thơm béo, ngọt dịu, tan chảy đầy mê hoặc.</li>
+  <li>Vị sữa bắp với hương thơm tự nhiên và vị ngọt thanh của bắp, đây sẽ là lựa chọn lý tưởng đặc biệt dành cho các bạn nhỏ.</li>
+</ul>
+<h4>Gokochi - Snack khoai tây tự nhiên, không thêm bột ngọt với 3 vị đặc biệt.</h4>
+<ul>
+  <li>Vị muối tự nhiên kết hợp khoai tây tươi cùng vị ngọt thanh từ cá và tảo biển, tạo nên hương vị tinh tế đầy lôi cuốn.</li>
+  <li>Vị muối tiêu đen với lát bánh dày giòn bùi, thấm đẫm hương tiêu ấm áp sẽ khiến bạn mê mẩn.</li>
+  <li>Vị rong biển với vị ngọt tự nhiên từ rong biển và nấm vi sinh lên men sẽ là lựa chọn chuẩn healthy mà vẫn ngon khó cưỡng.</li>
+</ul>
+<p>Đến ngay Galaxy Cinema để trải nghiệm siêu phẩm Snack đủ vị - Xem phim hay hết ý tại rạp nha!</p>
+<p><strong>Giá bán:</strong> Đồng giá 35.000vnđ/bịch lẻ, Chỉ 25.000vnđ/bịch khi mua kèm Combo Bắp Nước bất kỳ.</p>
+<p><strong>Thời gian:</strong> áp dụng từ ngày 01.04.2025.</p>
+<p><strong>Địa điểm:</strong> tất cả các cụm rạp Galaxy Cinema trên toàn quốc.</p>`,
       imageUrl: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=800',
       thumbnailUrl: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=400',
-      startDate: new Date('2025-06-01'),
-      endDate: new Date('2025-06-30'),
-      status: 'ACTIVE',
-      isFeatured: true,
-    },
-    {
-      title: 'NGÀY TRI ÂN - MIỄN PHÍ BẮP NƯỚC',
-      slug: 'ngay-tri-an-mien-phi-bap-nuoc',
-      description: 'Thứ Hai đầu tiên của mỗi tháng: Mua vé 2D chỉ từ 45K và được tặng 1 lần chấm thêm bắp & nước miễn phí',
-      content: '<p>Chương trình tri ân khách hàng đặc biệt vào thứ Hai đầu tiên của mỗi tháng. Mua vé 2D chỉ từ 45K và nhận ngay 1 lần chấm thêm bắp & nước miễn phí.</p><p>Áp dụng cho tất cả các rạp trong hệ thống.</p>',
-      imageUrl: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400',
-      startDate: new Date('2025-01-01'),
+      startDate: new Date('2025-04-01'),
       endDate: new Date('2025-12-31'),
       status: 'ACTIVE',
       isFeatured: true,
     },
     {
-      title: 'U22 - GIÁ VÉ CHỈ TỪ 45.000Đ',
-      slug: 'u22-gia-ve-chi-tu-45000d',
-      description: 'Ưu đãi đặc biệt cho khách hàng dưới 22 tuổi: Giá vé chỉ từ 45.000đ cho tất cả các suất chiếu',
-      content: '<p>Chương trình ưu đãi dành riêng cho khách hàng dưới 22 tuổi. Giá vé chỉ từ 45.000đ cho tất cả các suất chiếu 2D.</p><p>Áp dụng cả tuần, không giới hạn số lượng vé. Xuất trình CMND/CCCD khi mua vé.</p>',
-      imageUrl: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=800',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=400',
+      title: 'ĐẶT VÉ PHIM TRÊN ZALOPAY ĐỂ HƯỞNG KHUYẾN MẠI ĐỒNG GIÁ VÉ CHỈ 104.000đ - 115.000đ',
+      slug: 'dat-ve-phim-tren-zalopay-de-huong-khuyen-mai-dong-gia-ve-chi-104000d-115000d',
+      description: 'Đồng giá CGV chỉ 104K/vé & 115K/vé. Không giới hạn số lượng vé khi đặt vé phim trên Zalopay.',
+      content: `<h3>1. Địa điểm sử dụng: Đặt Vé Phim CGV trên Zalopay</h3>
+<h3>2. Đối tượng khuyến mại: Tất cả khách hàng của Zalopay</h3>
+<h3>3. Nội dung chương trình:</h3>
+<ul>
+  <li>Đồng giá CGV chỉ 104K/vé & 115K/vé</li>
+  <li>Không giới hạn số lượng vé (xem thêm quy định về loại vé và phòng chiếu)</li>
+</ul>
+<h4>**Quy định về loại vé & phòng chiếu</h4>
+<ul>
+  <li>Áp dụng các suất chiếu 2D CGV (ghế Standard, ghế VIP).</li>
+  <li>KHÔNG áp dụng cho các rạp CGV bán giá vé 2D tại rạp nhỏ hơn hoặc bằng 100.000đ</li>
+  <li>KHÔNG áp dụng Thứ 4 vui vẻ và Thứ 2 Cultureday</li>
+  <li>KHÔNG áp dụng cho các Suất chiếu sớm/ Suất chiếu đặc biệt/ Suất chiếu phim cũ/ Suất chiếu ngày Lễ Tết/ Suất chiếu 2D trong phòng chiếu đặc biệt HOẶC các phòng chiếu như: IMAX, 4DX, GOLD CLASS, STARIUM, L'AMOUR….</li>
+  <li>KHÔNG áp dụng cho Starter</li>
+</ul>
+<h4>**Quy định về thanh toán:</h4>
+<ul>
+  <li>CT không áp dụng cho GD thanh toán qua VietQR, Apple Pay và các nguồn tiền thanh toán phi liên kết.</li>
+  <li>Khi KH thay đổi nguồn tiền thanh toán, vui lòng áp dụng lại ưu đãi trước khi xác nhận lại thanh toán.</li>
+  <li>Giao dịch lì xì, chuyển tiền trên Zalo, gửi quà mừng, chuyển tiền từ tài khoản Zalopay đến số thẻ/số tài khoản ngân hàng hoặc rút tiền về tài khoản thẻ/ngân hàng không tính là giao dịch thanh toán.</li>
+  <li>Mỗi tài khoản Zalopay nhận được ưu đãi 01 lần trong suốt thời gian diễn ra chương trình.</li>
+  <li>Chương trình không hỗ trợ hoàn tiền cho các giao dịch hủy vé.</li>
+  <li>Không áp dụng thẻ ảo, thẻ prepaid và thẻ Napas.</li>
+</ul>
+<h4>**Quy định khác:</h4>
+<ul>
+  <li>Trường hợp bạn không đủ điều kiện tham gia chương trình do tài khoản Zalo không hoạt động thường xuyên hoặc nằm trong danh sách có hoạt động bất thường được ghi nhận tự động bởi hệ thống Zalopay.</li>
+  <li>Chương trình có thể kết thúc trước thời hạn nếu hết ngân sách khuyến mãi hoặc tạm dừng nếu có dấu hiệu gian lận, đầu cơ.</li>
+  <li>Giao dịch bị xác định là gian lận, giả mạo thì quà tặng khuyến mại sẽ bị hủy.</li>
+  <li>Không áp dụng đồng thời với các chương trình khuyến mãi với phim khác của Lotte Cinema, BHDS, CGV, Galaxy Cinema và Zalopay.</li>
+  <li>Chương trình này không hỗ trợ các giao dịch hủy, đổi trả đối với các đơn hàng đã thanh toán thành công.</li>
+  <li>Trong trường hợp có tranh chấp, quyết định của Zalopay là quyết định cuối cùng.</li>
+  <li>Ban tổ chức sẽ không giải quyết các trường hợp khách hàng khiếu nại về chương trình sau 3 ngày kể từ khi chương trình kết thúc.</li>
+  <li>Căn cứ Luật Điện ảnh của Bộ trưởng Bộ Văn Hóa, Thể thao, Du lịch ngày 15/06/2022, Zalopay - Đặt Vé Phim thông báo áp dụng quy định về khung giờ chiếu phim cho trẻ em như sau:</li>
+  <li>Trẻ em: Là khách hàng dưới 16 tuổi (căn cứ vào năm sinh của Khách Hàng) hoặc cao dưới 130cm (đối với một số trường hợp)</li>
+  <li>Giờ chiếu phim cho trẻ em dưới 13 tuổi tại rạp kết thúc trước 22 giờ.</li>
+  <li>Giờ chiếu phim cho trẻ em dưới 16 tuổi tại rạp kết thúc trước 23 giờ.</li>
+</ul>
+<p>Khi thanh toán, nếu khách hàng KHÔNG được giảm giá vui lòng gọi Hotline: 1900 54 54 36 để nhận hướng dẫn trước khi xác nhận thanh toán.</p>`,
+      imageUrl: 'https://www.cgv.vn/media/wysiwyg/2025/102025/350x495_6_.png',
+      thumbnailUrl: 'https://www.cgv.vn/media/wysiwyg/2025/102025/350x495_6_.png',
       startDate: new Date('2025-01-01'),
       endDate: new Date('2025-12-31'),
       status: 'ACTIVE',
       isFeatured: false,
     },
     {
-      title: 'COMBO GIA ĐÌNH - TIẾT KIỆM 30%',
-      slug: 'combo-gia-dinh-tiet-kiem-30',
-      description: 'Combo gia đình gồm 4 vé + 2 bắp lớn + 2 nước lớn. Tiết kiệm 30% so với mua lẻ',
-      content: '<p>Combo gia đình hoàn hảo cho cả nhà: 4 vé xem phim + 2 bắp lớn + 2 nước lớn. Tiết kiệm 30% so với mua lẻ.</p><p>Áp dụng cho tất cả các suất chiếu. Có thể mua trực tiếp tại quầy hoặc đặt online.</p>',
-      imageUrl: 'https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=800',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=400',
+      title: 'IMAX Treasure Hunt - Thưởng thức IMAX Laser tại Galaxy Sala',
+      slug: 'imax-treasure-hunt-thuong-thuc-imax-laser-tai-galaxy-sala',
+      description: 'Thưởng thức IMAX Laser tại Galaxy Sala, nhận ngay bộ quà đặc biệt Avatar: Fire And Ash! Từ nay đến 31.12.2025',
+      content: `<p>Thưởng thức IMAX Laser tại Galaxy Sala, nhận ngay bộ quà đặc biệt Avatar: Fire And Ash!</p>
+<p>Từ nay đến 31.12.2025, tham gia cuộc đua săn quà độc quyền bằng cách xem các phim: Avatar: The Way Of Water, Tron: Ares, Predator: Badlands, Zootopia 2 và Avatar: Fire And Ash với định dạng IMAX Laser.</p>
+<p>Chinh phục đủ 5 cột mốc điện ảnh, trở thành IMAX Hunter chính hiệu, Stars sẽ nhận "kho báu" ĐỘC QUYỀN chỉ có tại Galaxy Sala, bao gồm:</p>
+<ul>
+  <li>50 Stars đầu tiên xem đủ 5 phim: Set quà độc quyền Avatar Fire And Ash (01 túi tote, 01 bình giữ nhiệt và 01 pin cài).</li>
+  <li>30 Stars tiếp theo xem đủ 5 phim: 01 pin cài Avatar Fire And Ash.</li>
+</ul>
+<p>Mỗi khi hoàn thành 01 chặng, Stars sẽ được 01 dấu vào tài khoản</p>
+<h4>Điều kiện chương trình:</h4>
+<ul>
+  <li>Quý khách sẽ nhận thông báo về địa điểm, thời gian và cách thức nhận quà qua email.</li>
+  <li>Quà tặng không có giá trị quy đổi thành tiền mặt hoặc sản phẩm khác.</li>
+  <li>Mỗi khách hàng chỉ được tham gia và nhận quà 01 lần trong suốt chương trình.</li>
+  <li>Số lượng quà có hạn, chương trình có thể kết thúc sớm khi quà được phát hết.</li>
+  <li>Mọi trường hợp hủy vé hoặc đổi sang phim khác ngoài các phim được qui định trong chương trình sẽ được tính là không hợp lệ.</li>
+  <li>Ban tổ chức có quyền kiểm tra, từ chối hoặc hủy bỏ quyền nhận quà nếu phát hiện dấu hiệu gian lận.</li>
+  <li>Trong mọi trường hợp, quyết định của Galaxy Cinema là quyết định cuối cùng.</li>
+</ul>
+<p>Hẹn Stars tại phòng chiếu IMAX Laser - Galaxy Sala (Tầng 3, Thiso Mall Sala, 10 Mai Chí Thọ, Phường An Khánh) cùng trở thành IMAX Hunter nhé!</p>`,
+      imageUrl: 'https://www.galaxycine.vn/media/2025/9/24/imax-treasure-hunt-5_1758703687529.jpg',
+      thumbnailUrl: 'https://www.galaxycine.vn/media/2025/9/24/imax-treasure-hunt-5_1758703687529.jpg',
       startDate: new Date('2025-01-01'),
       endDate: new Date('2025-12-31'),
       status: 'ACTIVE',
-      isFeatured: false,
+      isFeatured: true,
     },
   ];
 

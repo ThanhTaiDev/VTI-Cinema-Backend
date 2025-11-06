@@ -21,6 +21,7 @@ const revenueRoutes = require('./routes/revenue');
 const seatRoutes = require('./routes/seats');
 const orderRoutes = require('./routes/orders');
 const eventRoutes = require('./routes/events');
+const bannerRoutes = require('./routes/banners');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/movies', movieRoutes);
@@ -34,6 +35,7 @@ app.use('/api/revenue', revenueRoutes);
 app.use('/api/seats', seatRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/events', eventRoutes);
+app.use('/api/banners', bannerRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
