@@ -13,31 +13,36 @@ const buildWhereClause = (params) => {
   const where = {};
   
   // Date range filter (Vietnam timezone UTC+7)
+  // Helper functions to parse dates with explicit UTC+7 offset
+  const parseVNDateStart = (dStr) => {
+    if (!dStr) return null;
+    if (dStr.includes('T') || dStr.includes('+')) {
+      // ISO string with offset, parse directly
+      return dayjs(dStr).toDate();
+    } else {
+      // YYYY-MM-DD format, explicitly set to UTC+7
+      return dayjs.tz(dStr + 'T00:00:00.000+07:00', TZ).toDate();
+    }
+  };
+  
+  const parseVNDateEnd = (dStr) => {
+    if (!dStr) return null;
+    if (dStr.includes('T') || dStr.includes('+')) {
+      // ISO string with offset, parse directly
+      return dayjs(dStr).toDate();
+    } else {
+      // YYYY-MM-DD format, explicitly set to UTC+7
+      return dayjs.tz(dStr + 'T23:59:59.999+07:00', TZ).toDate();
+    }
+  };
+  
   if (params.fromDate || params.toDate) {
     where.createdAt = {};
     if (params.fromDate) {
-      // Parse ISO string with offset (e.g., 2025-11-07T00:00:00+07:00) or YYYY-MM-DD
-      let fromDate;
-      if (params.fromDate.includes('T') || params.fromDate.includes('+')) {
-        // ISO string with offset
-        fromDate = dayjs(params.fromDate).toDate();
-      } else {
-        // YYYY-MM-DD format, convert to Vietnam timezone
-        fromDate = dayjs.tz(params.fromDate + 'T00:00:00', TZ).toDate();
-      }
-      where.createdAt.gte = fromDate;
+      where.createdAt.gte = parseVNDateStart(params.fromDate);
     }
     if (params.toDate) {
-      // Parse ISO string with offset (e.g., 2025-11-07T23:59:59+07:00) or YYYY-MM-DD
-      let toDate;
-      if (params.toDate.includes('T') || params.toDate.includes('+')) {
-        // ISO string with offset
-        toDate = dayjs(params.toDate).toDate();
-      } else {
-        // YYYY-MM-DD format, convert to Vietnam timezone
-        toDate = dayjs.tz(params.toDate + 'T23:59:59.999', TZ).toDate();
-      }
-      where.createdAt.lte = toDate;
+      where.createdAt.lte = parseVNDateEnd(params.toDate);
     }
   }
 
