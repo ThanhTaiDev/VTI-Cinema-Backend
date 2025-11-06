@@ -122,14 +122,16 @@ exports.getSeatMap = async (screeningId) => {
   const seatMap = {};
   seats.forEach(seat => {
     const latestStatus = seat.statuses && seat.statuses.length > 0 ? seat.statuses[0] : null;
-    const key = seat.code || `${String.fromCharCode(64 + seat.row)}${seat.col}`;
+    // Generate code if not exists: A1, B2, etc.
+    const code = seat.code || `${String.fromCharCode(64 + seat.row)}${seat.col}`;
+    const key = code;
     
     seatMap[key] = {
       id: seat.id,
       seatId: seat.id,
       row: seat.row,
       col: seat.col,
-      code: seat.code,
+      code: code, // Always include code for display
       status: latestStatus ? latestStatus.status : 'AVAILABLE',
       holdExpiresAt: latestStatus?.holdUntil || null,
     };
@@ -225,7 +227,7 @@ exports.holdSeats = async (screeningId, seatIds, userId) => {
       throw error;
     }
 
-    // Create new SeatStatus records with HELD status
+    // Create new SeatStatus records with HELD status (allows multiple statuses over time)
     await Promise.all(
       seatStatuses.map(({ seat }) =>
         tx.seatStatus.create({

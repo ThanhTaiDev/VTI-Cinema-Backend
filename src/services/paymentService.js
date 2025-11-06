@@ -106,15 +106,11 @@ exports.verify = async (id, data) => {
  * Initialize payment for an order
  */
 exports.initPayment = async (orderId, userId, method, idempotencyKey) => {
+  // Fetch order without movie/cinema (fetch separately)
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: {
-      screening: {
-        include: {
-          movie: true,
-          cinema: true,
-        },
-      },
+      screening: true,
     },
   });
 
@@ -135,6 +131,16 @@ exports.initPayment = async (orderId, userId, method, idempotencyKey) => {
     throw new Error('Order has expired');
   }
 
+  // Fetch movie and cinema separately
+  const [movie, cinema] = await Promise.all([
+    prisma.movie.findUnique({ where: { id: order.screening.movieId } }),
+    prisma.cinema.findUnique({ where: { id: order.screening.cinemaId } }),
+  ]);
+
+  // Attach movie and cinema to screening for backward compatibility
+  order.screening.movie = movie;
+  order.screening.cinema = cinema;
+
   // Check if payment already exists
   const existingPayment = await prisma.payment.findFirst({
     where: { orderId },
@@ -142,6 +148,8 @@ exports.initPayment = async (orderId, userId, method, idempotencyKey) => {
   });
 
   if (existingPayment && existingPayment.status === 'PENDING') {
+    // Attach order with movie/cinema to existing payment
+    existingPayment.order = order;
     return existingPayment;
   }
 
@@ -157,20 +165,21 @@ exports.initPayment = async (orderId, userId, method, idempotencyKey) => {
     include: {
       order: {
         include: {
-          screening: {
-            include: {
-              movie: true,
-              cinema: true,
-            },
-          },
+          screening: true,
         },
       },
     },
   });
 
+  // Attach movie and cinema to payment.order.screening for backward compatibility
+  payment.order.screening.movie = movie;
+  payment.order.screening.cinema = cinema;
+
   // Generate redirect URL (mock for now)
+  // For mock payment, redirect to payment page with order ID
+  // Frontend route is /payment/:ticketId (using order.id as ticketId)
   const redirectUrl = method === 'mock' 
-    ? `/payment/success/${payment.id}`
+    ? `/payment/${orderId}`
     : `https://payment-gateway.com/checkout/${payment.id}`;
 
   // Update payment with redirect URL
@@ -180,16 +189,15 @@ exports.initPayment = async (orderId, userId, method, idempotencyKey) => {
     include: {
       order: {
         include: {
-          screening: {
-            include: {
-              movie: true,
-              cinema: true,
-            },
-          },
+          screening: true,
         },
       },
     },
   });
+
+  // Attach movie and cinema to updatedPayment.order.screening for backward compatibility
+  updatedPayment.order.screening.movie = movie;
+  updatedPayment.order.screening.cinema = cinema;
 
   return updatedPayment;
 };
@@ -216,18 +224,42 @@ exports.handleWebhook = async (webhookData, signature) => {
     });
   }
 
+  // If payment not found but orderId exists, create payment for mock testing
+  if (!payment && orderId) {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { screening: true },
+    });
+    
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    // Create payment if doesn't exist (for mock testing)
+    payment = await prisma.payment.create({
+      data: {
+        orderId,
+        amount: order.totalAmount,
+        method: 'mock',
+        status: 'PENDING',
+        webhookData: JSON.stringify(webhookData),
+      },
+      include: { order: true },
+    });
+  }
+
   if (!payment) {
     throw new Error('Payment not found');
   }
 
   // Update payment status
-  const status = type === 'payment.succeeded' || type === 'payment.success' ? 'PAID' : 'FAILED';
+  const status = type === 'payment.succeeded' || type === 'payment.success' || type === 'SUCCESS' ? 'PAID' : 'FAILED';
   
   const updatedPayment = await prisma.payment.update({
     where: { id: payment.id },
     data: {
       status,
-      externalRef: webhookData.externalRef || webhookData.paymentId,
+      externalRef: webhookData.externalRef || webhookData.paymentId || paymentId || `mock-${orderId}`,
       webhookData: JSON.stringify(webhookData),
     },
     include: { order: true },
@@ -236,7 +268,7 @@ exports.handleWebhook = async (webhookData, signature) => {
   // Update order status if payment successful
   if (status === 'PAID') {
     const orderService = require('./orderService');
-    await orderService.updateOrderStatus(orderId, 'PAID');
+    await orderService.updateOrderStatus(orderId || payment.orderId, 'PAID');
   }
 
   return updatedPayment;

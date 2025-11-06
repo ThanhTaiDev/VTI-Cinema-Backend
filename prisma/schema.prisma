@@ -100,9 +100,10 @@ model SeatStatus {
   screening   Screening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
   order       Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
   
-  @@unique([screeningId, seatId])
+  @@index([screeningId, seatId])
   @@index([screeningId, status])
   @@index([holdToken])
+  @@index([seatId, createdAt])
 }
 
 model Order {
