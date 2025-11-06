@@ -59,6 +59,8 @@ exports.getCurrentUser = async (userId) => {
       phone: true,
       role: true,
       status: true,
+      dateOfBirth: true,
+      gender: true,
       createdAt: true,
     },
   });

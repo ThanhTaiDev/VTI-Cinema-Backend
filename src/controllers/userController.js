@@ -39,3 +39,12 @@ exports.delete = async (req, res, next) => {
   }
 };
 
+exports.updateMe = async (req, res, next) => {
+  try {
+    const user = await userService.update(req.user.id, req.body);
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
+};
+

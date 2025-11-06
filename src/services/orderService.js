@@ -154,12 +154,39 @@ exports.createOrder = async (data, userId) => {
       )
     );
 
+    // Create tickets immediately with PENDING status
+    const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
+    const tickets = await Promise.all(
+      validSeatStatuses.map(async (seatStatus, index) => {
+        const seat = seatStatus.seat;
+        const individualTicketCode = `${ticketCode}-${index + 1}`;
+        const qrCode = `TICKET-${order.id}-${seat.id}-${individualTicketCode}`;
+        const pricePerTicket = Math.round(totalAmount / validSeatStatuses.length);
+        
+        return await tx.ticket.create({
+          data: {
+            orderId: order.id,
+            screeningId: order.screeningId,
+            seatId: seat.id,
+            seatRow: seat.row,
+            seatCol: seat.col,
+            userId: order.userId,
+            status: 'PENDING',
+            price: pricePerTicket,
+            code: individualTicketCode,
+            qrCode,
+          },
+        });
+      })
+    );
+
     // Idempotency is handled by unique constraint on order.idempotencyKey
 
     return {
       ...order,
       pricingBreakdown: JSON.parse(order.pricingBreakdown),
       seatIds: JSON.parse(order.seatIds),
+      tickets,
     };
   }, {
     timeout: 10000,
@@ -303,7 +330,7 @@ exports.updateOrderStatus = async (orderId, status) => {
       data: { status },
     });
 
-    // If payment successful, create new SeatStatus records with SOLD status and create tickets
+    // If payment successful, create new SeatStatus records with SOLD status and update tickets
     if (status === 'PAID') {
       // Create new SeatStatus records with SOLD status (don't update Seat directly)
       const soldStatuses = await Promise.all(
@@ -322,29 +349,50 @@ exports.updateOrderStatus = async (orderId, status) => {
         )
       );
 
-      // Create tickets from seat statuses
-      const tickets = await Promise.all(
-        soldStatuses.map(async (seatStatus) => {
-          const seat = seatStatus.seat;
-          const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
-          const qrCode = `TICKET-${order.id}-${seat.id}-${ticketCode}`;
-          
-          return await tx.ticket.create({
-            data: {
-              orderId: order.id,
-              screeningId: order.screeningId,
-              seatId: seat.id,
-              seatRow: seat.row,
-              seatCol: seat.col,
-              userId: order.userId,
-              status: 'ISSUED',
-              price: Math.round(order.totalAmount / soldStatuses.length),
-              code: ticketCode,
-              qrCode,
-            },
-          });
-        })
-      );
+      // Update existing tickets from PENDING to ISSUED
+      const existingTickets = await tx.ticket.findMany({
+        where: {
+          orderId: order.id,
+          status: 'PENDING',
+        },
+      });
+
+      let tickets = [];
+      if (existingTickets.length > 0) {
+        // Update existing tickets to ISSUED
+        tickets = await Promise.all(
+          existingTickets.map(ticket =>
+            tx.ticket.update({
+              where: { id: ticket.id },
+              data: { status: 'ISSUED' },
+            })
+          )
+        );
+      } else {
+        // Fallback: Create tickets if they don't exist (shouldn't happen with new flow)
+        tickets = await Promise.all(
+          soldStatuses.map(async (seatStatus) => {
+            const seat = seatStatus.seat;
+            const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
+            const qrCode = `TICKET-${order.id}-${seat.id}-${ticketCode}`;
+            
+            return await tx.ticket.create({
+              data: {
+                orderId: order.id,
+                screeningId: order.screeningId,
+                seatId: seat.id,
+                seatRow: seat.row,
+                seatCol: seat.col,
+                userId: order.userId,
+                status: 'ISSUED',
+                price: Math.round(order.totalAmount / soldStatuses.length),
+                code: ticketCode,
+                qrCode,
+              },
+            });
+          })
+        );
+      }
 
       return {
         ...updatedOrder,

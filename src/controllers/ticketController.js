@@ -118,3 +118,12 @@ exports.bulkRefund = async (req, res, next) => {
   }
 };
 
+exports.getMyTickets = async (req, res, next) => {
+  try {
+    const result = await ticketService.getAll({ ...req.query, userId: req.user.id });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+

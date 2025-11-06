@@ -3,6 +3,9 @@ const router = express.Router();
 const userController = require('../controllers/userController');
 const { authenticate, requireAdmin } = require('../middlewares/auth');
 
+// User route - Update own profile
+router.put('/me', authenticate, userController.updateMe);
+
 // Admin routes only
 router.get('/', authenticate, requireAdmin, userController.getAll);
 router.get('/:id', authenticate, requireAdmin, userController.getById);

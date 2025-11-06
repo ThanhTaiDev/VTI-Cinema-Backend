@@ -473,17 +473,60 @@ exports.cancel = async (id) => {
     throw new Error('Invalid ticket ID');
   }
   
-  const ticket = await prisma.ticket.findUnique({ where: { id } });
-  if (!ticket) {
-    throw new Error(`Ticket not found: ${id}`);
-  }
-  if (ticket.status !== 'PENDING') {
-    throw new Error('Only pending tickets can be cancelled');
-  }
+  return await prisma.$transaction(async (tx) => {
+    const ticket = await tx.ticket.findUnique({ 
+      where: { id },
+      include: {
+        order: true,
+      },
+    });
+    
+    if (!ticket) {
+      throw new Error(`Ticket not found: ${id}`);
+    }
+    
+    // Allow canceling PENDING, ISSUED, and FAILED tickets
+    // Don't allow canceling already CANCELED, REFUNDED, or LOCKED tickets
+    if (ticket.status === 'CANCELED' || ticket.status === 'REFUNDED' || ticket.status === 'LOCKED') {
+      throw new Error(`Cannot cancel ticket with status: ${ticket.status}`);
+    }
 
-  return await prisma.ticket.update({
-    where: { id },
-    data: { status: 'CANCELED' },
+    // Update ticket status to CANCELED
+    const updatedTicket = await tx.ticket.update({
+      where: { id },
+      data: { status: 'CANCELED' },
+    });
+
+    // Create new SeatStatus with AVAILABLE to release the seat
+    // This allows the seat to be booked again
+    await tx.seatStatus.create({
+      data: {
+        seatId: ticket.seatId,
+        screeningId: ticket.screeningId,
+        status: 'AVAILABLE',
+      },
+    });
+
+    // Check if all tickets in the order are canceled
+    const orderTickets = await tx.ticket.findMany({
+      where: { orderId: ticket.orderId },
+    });
+
+    const allCanceled = orderTickets.every(t => 
+      t.status === 'CANCELED' || t.status === 'FAILED'
+    );
+
+    // If all tickets are canceled, update order status to CANCELED
+    if (allCanceled && orderTickets.length > 0) {
+      await tx.order.update({
+        where: { id: ticket.orderId },
+        data: { status: 'CANCELED' },
+      });
+    }
+
+    return updatedTicket;
+  }, {
+    timeout: 10000,
   });
 };
 
@@ -533,36 +576,55 @@ exports.refund = async (id, reason) => {
     throw new Error('Invalid ticket ID');
   }
   
-  const ticket = await prisma.ticket.findUnique({
-    where: { id },
-    include: { order: { include: { payments: true } } },
-  });
-  
-  if (!ticket) {
-    throw new Error(`Ticket not found: ${id}`);
-  }
-  
-  if (ticket.status !== 'ISSUED') {
-    throw new Error('Only ISSUED tickets can be refunded');
-  }
-  
-  // Check if payment was made
-  const paidPayment = ticket.order?.payments?.find(p => p.status === 'PAID');
-  if (!paidPayment) {
-    throw new Error('No paid payment found for this ticket');
-  }
-  
-  // TODO: Call payment provider to refund
-  // For now, just update status
-  // In production, this should:
-  // 1. Call payment provider refund API
-  // 2. Update Payment status to REFUNDED
-  // 3. Update Order status to REFUNDED
-  // 4. Update Ticket status to REFUNDED
-  
-  return await prisma.ticket.update({
-    where: { id },
-    data: { status: 'REFUNDED' },
+  return await prisma.$transaction(async (tx) => {
+    const ticket = await tx.ticket.findUnique({
+      where: { id },
+      include: { 
+        order: { 
+          include: { payments: true } 
+        } 
+      },
+    });
+    
+    if (!ticket) {
+      throw new Error(`Ticket not found: ${id}`);
+    }
+    
+    if (ticket.status !== 'ISSUED') {
+      throw new Error('Only ISSUED tickets can be refunded');
+    }
+    
+    // Check if payment was made
+    const paidPayment = ticket.order?.payments?.find(p => p.status === 'PAID');
+    if (!paidPayment) {
+      throw new Error('No paid payment found for this ticket');
+    }
+    
+    // Update ticket status to REFUNDED
+    const updatedTicket = await tx.ticket.update({
+      where: { id },
+      data: { status: 'REFUNDED' },
+    });
+
+    // Create new SeatStatus with AVAILABLE to release the seat
+    // This allows the seat to be booked again after refund
+    await tx.seatStatus.create({
+      data: {
+        seatId: ticket.seatId,
+        screeningId: ticket.screeningId,
+        status: 'AVAILABLE',
+      },
+    });
+
+    // TODO: Call payment provider to refund
+    // In production, this should:
+    // 1. Call payment provider refund API
+    // 2. Update Payment status to REFUNDED
+    // 3. Update Order status to REFUNDED (if all tickets refunded)
+    
+    return updatedTicket;
+  }, {
+    timeout: 10000,
   });
 };
 

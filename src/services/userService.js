@@ -20,6 +20,8 @@ exports.getAll = async (params = {}) => {
       phone: true,
       role: true,
       status: true,
+      dateOfBirth: true,
+      gender: true,
       createdAt: true,
     },
     orderBy: { createdAt: 'desc' },
@@ -49,13 +51,15 @@ exports.getById = async (id) => {
       phone: true,
       role: true,
       status: true,
+      dateOfBirth: true,
+      gender: true,
       createdAt: true,
     },
   });
 };
 
 exports.update = async (id, data) => {
-  const { name, email, phone, role, status } = data;
+  const { name, email, phone, role, status, dateOfBirth, gender } = data;
   
   const updateData = {};
   if (name) updateData.name = name;
@@ -63,6 +67,8 @@ exports.update = async (id, data) => {
   if (phone !== undefined) updateData.phone = phone;
   if (role) updateData.role = role;
   if (status) updateData.status = status;
+  if (dateOfBirth !== undefined) updateData.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+  if (gender !== undefined) updateData.gender = gender;
 
   return await prisma.user.update({
     where: { id },
@@ -75,6 +81,8 @@ exports.update = async (id, data) => {
       phone: true,
       role: true,
       status: true,
+      dateOfBirth: true,
+      gender: true,
     },
   });
 };
