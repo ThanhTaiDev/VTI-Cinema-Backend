@@ -7,6 +7,10 @@ const { authenticate } = require('../middlewares/auth');
 router.post('/', authenticate, paymentController.create);
 router.get('/:id', authenticate, paymentController.getById);
 router.post('/:id/verify', authenticate, paymentController.verify);
+router.post('/:orderId/init', authenticate, paymentController.initPayment);
+
+// Public routes (for webhook)
+router.post('/webhook', paymentController.handleWebhook);
 
 module.exports = router;
 

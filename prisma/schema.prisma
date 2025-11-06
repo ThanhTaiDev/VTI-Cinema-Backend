@@ -50,6 +50,9 @@ model Screening {
   startTime DateTime
   endTime   DateTime
   price     Int
+  seats     Seat[]
+  seatStatuses SeatStatus[]
+  orders    Order[]
 }
 
 model Review {
@@ -62,24 +65,98 @@ model Review {
   createdAt DateTime @default(now())
 }
 
-model Ticket {
-  id         String   @id @default(cuid())
-  code       String   @unique @default(uuid())
+enum SeatState {
+  AVAILABLE
+  HELD
+  SOLD
+}
+
+model Seat {
+  id          String    @id @default(cuid())
   screeningId String
-  seatRow    String
-  seatCol    String
+  row         Int
+  col         Int
+  code        String    // "A1", "D6", ...
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  screening   Screening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  statuses    SeatStatus[]
+
+  @@unique([screeningId, row, col])
+  @@index([screeningId])
+}
+
+model SeatStatus {
+  id          String    @id @default(cuid())
+  seatId      String
+  screeningId String
+  status      SeatState @default(AVAILABLE)
+  holdToken   String?
+  holdUserId  String?
+  holdUntil   DateTime?
+  orderId     String?
+  createdAt   DateTime  @default(now())
+  seat        Seat      @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  screening   Screening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  order       Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  
+  @@unique([screeningId, seatId])
+  @@index([screeningId, status])
+  @@index([holdToken])
+}
+
+model Order {
+  id              String    @id @default(cuid())
+  userId          String
+  screeningId     String
+  holdToken       String    @unique
+  status          String    @default("PENDING")
+  seatIds         String
+  pricingBreakdown String?
+  totalAmount     Int
+  voucherCode     String?
+  idempotencyKey  String?   @unique
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  screening       Screening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  seatStatuses    SeatStatus[]
+  payments        Payment[]
+  tickets         Ticket[]
+
+  @@index([userId])
+  @@index([holdToken])
+  @@index([status, expiresAt])
+}
+
+model Ticket {
+  id         String    @id @default(cuid())
+  code       String    @unique @default(uuid())
+  orderId    String
+  screeningId String
+  seatId     String
+  seatRow    Int
+  seatCol    Int
   userId     String
-  status     String   @default("PENDING")
+  status     String    @default("PENDING")
   price      Int
-  createdAt  DateTime @default(now())
+  qrCode     String?
+  checkInAt  DateTime?
+  createdAt  DateTime  @default(now())
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model Payment {
-  id         String   @id @default(cuid())
-  ticketId   String
+  id         String    @id @default(cuid())
+  orderId    String
+  ticketId   String?
   amount     Int
   method     String
-  status     String
+  status     String    @default("PENDING")
   externalRef String?
-  createdAt  DateTime @default(now())
+  redirectUrl String?
+  webhookData String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }

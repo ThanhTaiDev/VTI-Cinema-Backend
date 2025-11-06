@@ -70,15 +70,53 @@ exports.create = async (data) => {
     throw new Error('All fields are required');
   }
 
-  const screening = await prisma.screening.create({
-    data: {
-      movieId,
-      cinemaId,
-      room,
-      startTime: new Date(startTime),
-      endTime: new Date(endTime),
-      price: parseInt(price),
-    },
+  // Create screening with seats in a transaction
+  const screening = await prisma.$transaction(async (tx) => {
+    const newScreening = await tx.screening.create({
+      data: {
+        movieId,
+        cinemaId,
+        room,
+        startTime: new Date(startTime),
+        endTime: new Date(endTime),
+        price: parseInt(price),
+      },
+    });
+
+    // Create seats (8 rows x 10 columns)
+    const ROWS = 8;
+    const COLS = 10;
+    const seatCreates = [];
+    
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const row = r + 1;
+        const col = c + 1;
+        const code = String.fromCharCode(65 + r) + col; // A1, A2, ..., H10
+        
+        seatCreates.push(
+          tx.seat.create({
+            data: {
+              screeningId: newScreening.id,
+              row,
+              col,
+              code,
+              statuses: {
+                create: {
+                  screeningId: newScreening.id,
+                  status: 'AVAILABLE',
+                },
+              },
+            },
+          })
+        );
+      }
+    }
+    
+    await Promise.all(seatCreates);
+    console.log(`Created ${ROWS * COLS} seats for screening ${newScreening.id}`);
+    
+    return newScreening;
   });
   
   const [movie, cinema] = await Promise.all([
