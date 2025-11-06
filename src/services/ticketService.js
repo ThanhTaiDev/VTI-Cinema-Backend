@@ -628,6 +628,77 @@ exports.refund = async (id, reason) => {
   });
 };
 
+/**
+ * Check-in a ticket (mark as checked in)
+ * Prevents duplicate check-in
+ */
+exports.checkIn = async (ticketId) => {
+  if (!ticketId || typeof ticketId !== 'string') {
+    throw new Error('Invalid ticket ID');
+  }
+
+  return await prisma.$transaction(async (tx) => {
+    const ticket = await tx.ticket.findUnique({
+      where: { id: ticketId },
+      include: {
+        order: true,
+        screening: true,
+      },
+    });
+
+    if (!ticket) {
+      throw new Error(`Ticket not found: ${ticketId}`);
+    }
+
+    // Check if ticket is already checked in
+    if (ticket.checkInAt) {
+      throw new Error('Ticket already checked in');
+    }
+
+    // Check if ticket status is valid for check-in
+    if (ticket.status !== 'ISSUED') {
+      throw new Error(`Cannot check-in ticket with status: ${ticket.status}`);
+    }
+
+    // Check if order is paid
+    const paidPayment = await tx.payment.findFirst({
+      where: {
+        orderId: ticket.orderId,
+        status: 'PAID',
+      },
+    });
+
+    if (!paidPayment) {
+      throw new Error('Order is not paid');
+    }
+
+    // Check if screening has started (allow check-in up to 30 minutes after start)
+    const now = new Date();
+    const startTime = new Date(ticket.screening.startTime);
+    const minutesSinceStart = (now - startTime) / (1000 * 60);
+
+    if (minutesSinceStart < -30) {
+      throw new Error('Check-in is only available 30 minutes before showtime');
+    }
+
+    if (minutesSinceStart > 30) {
+      throw new Error('Check-in is only available up to 30 minutes after showtime');
+    }
+
+    // Mark ticket as checked in
+    const updatedTicket = await tx.ticket.update({
+      where: { id: ticketId },
+      data: {
+        checkInAt: now,
+      },
+    });
+
+    return updatedTicket;
+  }, {
+    timeout: 10000,
+  });
+};
+
 // Export tickets to CSV
 exports.exportToCSV = async (params = {}) => {
   // Use getAll but without pagination

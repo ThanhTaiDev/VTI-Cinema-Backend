@@ -14,6 +14,9 @@ router.post('/', (req, res) => {
 // User routes - Get user's own tickets
 router.get('/my-tickets', authenticate, ticketController.getMyTickets);
 
+// Public route for check-in (used by staff at cinema entrance)
+router.post('/:id/check-in', ticketController.checkIn);
+
 // Admin routes
 // IMPORTANT: Bulk routes must be defined BEFORE /:id routes to avoid route conflicts
 router.get('/', authenticate, requireAdmin, ticketController.getAll);

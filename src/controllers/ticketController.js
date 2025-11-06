@@ -127,3 +127,12 @@ exports.getMyTickets = async (req, res, next) => {
   }
 };
 
+exports.checkIn = async (req, res, next) => {
+  try {
+    const ticket = await ticketService.checkIn(req.params.id);
+    res.json(ticket);
+  } catch (err) {
+    next(err);
+  }
+};
+

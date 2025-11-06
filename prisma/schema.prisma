@@ -33,16 +33,41 @@ model Cinema {
   phone     String?
 }
 
+enum MovieStatus {
+  COMING_SOON
+  NOW_PLAYING
+  ARCHIVED
+}
+
 model Movie {
-  id          String   @id @default(cuid())
-  title       String
-  actors      String?
-  duration    Int
-  genres      String?
-  releaseDate DateTime?
-  rating      Float?
-  description String?
-  posterUrl   String?
+  id           String      @id @default(cuid())
+  title        String
+  slug         String?     @unique
+  actors       String?
+  director     String?
+  duration     Int
+  genres       String?
+  countries    String?
+  releaseDate  DateTime?
+  rating       Float?
+  ageRating    String?     // T13, T16, T18, etc.
+  description  String?
+  summary      String?
+  posterUrl    String?
+  backdropUrl  String?
+  trailerUrl   String?
+  formats      String?     // JSON array: ["2D", "3D", "IMAX"]
+  cast         String?     // JSON array of cast members
+  status       MovieStatus @default(COMING_SOON)
+  isPreSale    Boolean     @default(false)
+  isFeatured   Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  screenings   Screening[]
+  
+  @@index([status])
+  @@index([releaseDate])
+  @@index([isFeatured])
 }
 
 model Screening {
@@ -53,10 +78,15 @@ model Screening {
   startTime DateTime
   endTime   DateTime
   price     Int
+  movie     Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
   seats     Seat[]
   seatStatuses SeatStatus[]
   orders    Order[]
   tickets   Ticket[]
+  
+  @@index([movieId])
+  @@index([cinemaId])
+  @@index([startTime])
 }
 
 model Review {
@@ -121,6 +151,7 @@ model Order {
   totalAmount     Int
   voucherCode     String?
   idempotencyKey  String?   @unique
+  qrCode          String?   @unique
   expiresAt       DateTime
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -132,6 +163,7 @@ model Order {
   @@index([userId])
   @@index([holdToken])
   @@index([status, expiresAt])
+  @@index([qrCode])
 }
 
 model Ticket {

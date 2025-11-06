@@ -28,3 +28,13 @@ exports.getUserOrders = async (req, res, next) => {
   }
 };
 
+exports.getOrderByQrCode = async (req, res, next) => {
+  try {
+    const { qrCode } = req.params;
+    const order = await orderService.getOrderByQrCode(qrCode);
+    res.json(order);
+  } catch (err) {
+    next(err);
+  }
+};
+

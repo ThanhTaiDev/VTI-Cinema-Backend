@@ -154,13 +154,21 @@ exports.createOrder = async (data, userId) => {
       )
     );
 
-    // Create tickets immediately with PENDING status
+    // Generate a single QR code for the entire order
+    const orderQrCode = `ORDER-${order.id}-${crypto.randomBytes(16).toString('hex').toUpperCase()}`;
+    
+    // Update order with QR code
+    const updatedOrder = await tx.order.update({
+      where: { id: order.id },
+      data: { qrCode: orderQrCode },
+    });
+
+    // Create tickets immediately with PENDING status (no individual QR codes)
     const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
     const tickets = await Promise.all(
       validSeatStatuses.map(async (seatStatus, index) => {
         const seat = seatStatus.seat;
         const individualTicketCode = `${ticketCode}-${index + 1}`;
-        const qrCode = `TICKET-${order.id}-${seat.id}-${individualTicketCode}`;
         const pricePerTicket = Math.round(totalAmount / validSeatStatuses.length);
         
         return await tx.ticket.create({
@@ -174,7 +182,8 @@ exports.createOrder = async (data, userId) => {
             status: 'PENDING',
             price: pricePerTicket,
             code: individualTicketCode,
-            qrCode,
+            // No qrCode for individual tickets - use order's QR code
+            qrCode: null,
           },
         });
       })
@@ -183,9 +192,9 @@ exports.createOrder = async (data, userId) => {
     // Idempotency is handled by unique constraint on order.idempotencyKey
 
     return {
-      ...order,
-      pricingBreakdown: JSON.parse(order.pricingBreakdown),
-      seatIds: JSON.parse(order.seatIds),
+      ...updatedOrder,
+      pricingBreakdown: JSON.parse(updatedOrder.pricingBreakdown),
+      seatIds: JSON.parse(updatedOrder.seatIds),
       tickets,
     };
   }, {
@@ -370,11 +379,11 @@ exports.updateOrderStatus = async (orderId, status) => {
         );
       } else {
         // Fallback: Create tickets if they don't exist (shouldn't happen with new flow)
+        const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
         tickets = await Promise.all(
-          soldStatuses.map(async (seatStatus) => {
+          soldStatuses.map(async (seatStatus, index) => {
             const seat = seatStatus.seat;
-            const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
-            const qrCode = `TICKET-${order.id}-${seat.id}-${ticketCode}`;
+            const individualTicketCode = `${ticketCode}-${index + 1}`;
             
             return await tx.ticket.create({
               data: {
@@ -386,8 +395,9 @@ exports.updateOrderStatus = async (orderId, status) => {
                 userId: order.userId,
                 status: 'ISSUED',
                 price: Math.round(order.totalAmount / soldStatuses.length),
-                code: ticketCode,
-                qrCode,
+                code: individualTicketCode,
+                // No qrCode for individual tickets - use order's QR code
+                qrCode: null,
               },
             });
           })
@@ -404,5 +414,47 @@ exports.updateOrderStatus = async (orderId, status) => {
   }, {
     timeout: 10000,
   });
+};
+
+/**
+ * Get order by QR code (for check-in)
+ */
+exports.getOrderByQrCode = async (qrCode) => {
+  if (!qrCode) {
+    throw new Error('QR code is required');
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { qrCode },
+    include: {
+      screening: true,
+      tickets: {
+        orderBy: { createdAt: 'asc' },
+      },
+    },
+  });
+
+  if (!order) {
+    throw new Error('Order not found');
+  }
+
+  // Fetch movie and cinema separately
+  const [movie, cinema] = await Promise.all([
+    prisma.movie.findUnique({
+      where: { id: order.screening?.movieId },
+    }),
+    prisma.cinema.findUnique({
+      where: { id: order.screening?.cinemaId },
+    }),
+  ]);
+
+  return {
+    ...order,
+    screening: {
+      ...order.screening,
+      movie: movie || null,
+      cinema: cinema || null,
+    },
+  };
 };
 
