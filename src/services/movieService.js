@@ -61,6 +61,12 @@ exports.getById = async (id) => {
   });
 };
 
+exports.getBySlug = async (slug) => {
+  return await prisma.movie.findUnique({
+    where: { slug },
+  });
+};
+
 exports.create = async (data) => {
   const {
     title,

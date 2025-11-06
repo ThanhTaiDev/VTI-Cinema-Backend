@@ -5,6 +5,7 @@ const { authenticate, requireAdmin } = require('../middlewares/auth');
 
 // Public routes
 router.get('/', movieController.getAll);
+router.get('/slug/:slug', movieController.getBySlug);
 router.get('/:id', movieController.getById);
 
 // Admin routes

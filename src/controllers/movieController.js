@@ -21,6 +21,18 @@ exports.getById = async (req, res, next) => {
   }
 };
 
+exports.getBySlug = async (req, res, next) => {
+  try {
+    const movie = await movieService.getBySlug(req.params.slug);
+    if (!movie) {
+      return res.status(404).json({ message: 'Movie not found' });
+    }
+    res.json(movie);
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.create = async (req, res, next) => {
   try {
     const movie = await movieService.create(req.body);
