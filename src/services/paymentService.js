@@ -209,6 +209,8 @@ exports.handleWebhook = async (webhookData, signature) => {
   // For mock payment, auto approve
   const { type, orderId, paymentId } = webhookData;
 
+  console.log('[Webhook] Received webhook:', { type, orderId, paymentId });
+
   let payment;
   
   if (paymentId) {
@@ -228,12 +230,17 @@ exports.handleWebhook = async (webhookData, signature) => {
   if (!payment && orderId) {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { screening: true },
+      include: { 
+        screening: true,
+        seatStatuses: true,
+      },
     });
     
     if (!order) {
-      throw new Error('Order not found');
+      throw new Error(`Order not found: ${orderId}`);
     }
+
+    console.log('[Webhook] Creating payment for order:', orderId);
 
     // Create payment if doesn't exist (for mock testing)
     payment = await prisma.payment.create({
@@ -249,12 +256,14 @@ exports.handleWebhook = async (webhookData, signature) => {
   }
 
   if (!payment) {
-    throw new Error('Payment not found');
+    throw new Error('Payment not found and cannot create');
   }
 
   // Update payment status
   const status = type === 'payment.succeeded' || type === 'payment.success' || type === 'SUCCESS' ? 'PAID' : 'FAILED';
   
+  console.log('[Webhook] Updating payment status to:', status);
+
   const updatedPayment = await prisma.payment.update({
     where: { id: payment.id },
     data: {
@@ -267,8 +276,15 @@ exports.handleWebhook = async (webhookData, signature) => {
 
   // Update order status if payment successful
   if (status === 'PAID') {
-    const orderService = require('./orderService');
-    await orderService.updateOrderStatus(orderId || payment.orderId, 'PAID');
+    console.log('[Webhook] Updating order status to PAID for order:', orderId || payment.orderId);
+    try {
+      const orderService = require('./orderService');
+      await orderService.updateOrderStatus(orderId || payment.orderId, 'PAID');
+      console.log('[Webhook] Order status updated successfully');
+    } catch (err) {
+      console.error('[Webhook] Error updating order status:', err);
+      throw err;
+    }
   }
 
   return updatedPayment;
