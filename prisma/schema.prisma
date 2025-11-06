@@ -17,6 +17,7 @@ model User {
   role      String   @default("USER")
   status    String   @default("ACTIVE")
   createdAt DateTime @default(now())
+  tickets   Ticket[]
 }
 
 model Cinema {
@@ -53,6 +54,7 @@ model Screening {
   seats     Seat[]
   seatStatuses SeatStatus[]
   orders    Order[]
+  tickets   Ticket[]
 }
 
 model Review {
@@ -145,6 +147,8 @@ model Ticket {
   checkInAt  DateTime?
   createdAt  DateTime  @default(now())
   order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  screening  Screening? @relation(fields: [screeningId], references: [id], onDelete: Cascade)
 }
 
 model Payment {

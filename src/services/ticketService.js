@@ -4,53 +4,331 @@ const crypto = require('crypto');
 exports.getAll = async (params = {}) => {
   const where = {};
   
+  // Status filter
   if (params.status) {
     where.status = params.status;
   }
+  
+  // User filter
   if (params.userId) {
     where.userId = params.userId;
   }
+  
+  // Search by code, orderId, email, phone
+  // Note: SQLite doesn't support case-insensitive contains natively
+  // We'll filter in memory after fetching, or use a simpler approach
+  // For now, use contains which works but is case-sensitive
+  if (params.search) {
+    where.OR = [
+      { code: { contains: params.search } },
+      { orderId: { contains: params.search } },
+    ];
+    // Note: User email/phone search requires separate query or post-filtering
+    // For simplicity, we'll search by code and orderId first
+  }
+  
+  // Build screening filter properly (avoid overwriting)
+  const screeningWhere = {};
+  if (params.movieId) {
+    screeningWhere.movieId = params.movieId;
+  }
+  if (params.cinemaId) {
+    screeningWhere.cinemaId = params.cinemaId;
+  }
+  if (params.room) {
+    screeningWhere.room = params.room;
+  }
+  if (params.from || params.to) {
+    screeningWhere.startTime = {};
+    if (params.from) {
+      const fromDate = new Date(params.from);
+      fromDate.setHours(0, 0, 0, 0);
+      screeningWhere.startTime.gte = fromDate;
+    }
+    if (params.to) {
+      const toDate = new Date(params.to);
+      toDate.setHours(23, 59, 59, 999);
+      screeningWhere.startTime.lte = toDate;
+    }
+  }
+  
+  // Apply screening filter if any
+  if (Object.keys(screeningWhere).length > 0) {
+    where.screening = screeningWhere;
+  }
+  
+  // Created date range
+  if (params.createdFrom || params.createdTo) {
+    where.createdAt = {};
+    if (params.createdFrom) {
+      where.createdAt.gte = new Date(params.createdFrom);
+    }
+    if (params.createdTo) {
+      where.createdAt.lte = new Date(params.createdTo);
+    }
+  }
+  
+  // Payment status filter (via Order -> Payment)
+  // Filter by latest payment status
+  if (params.paymentStatus) {
+    // We'll filter this in memory after fetching, as it requires joining through Order -> Payment
+    // For now, we'll handle it after fetching tickets
+  }
+  
+  // Pagination
+  const page = parseInt(params.page) || 1;
+  const size = parseInt(params.size) || 20;
+  const skip = (page - 1) * size;
 
-  return await prisma.ticket.findMany({
-    where,
-    include: {
-      user: {
+  // If search includes user fields, we need to fetch all and filter in memory
+  // Otherwise, use pagination
+  const needsInMemoryFilter = params.search && (
+    params.search.includes('@') || // Email pattern
+    /^\d+$/.test(params.search) // Phone pattern (all digits)
+  );
+
+  let tickets, total;
+
+  if (needsInMemoryFilter) {
+    // Fetch all matching tickets (without pagination for search)
+    // Build where without OR for search
+    const whereWithoutSearch = { ...where };
+    delete whereWithoutSearch.OR;
+    
+    const allTickets = await prisma.ticket.findMany({
+      where: whereWithoutSearch,
+      include: {
+        order: {
+          include: {
+            payments: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Fetch users and screenings separately
+    const userIds = [...new Set(allTickets.map(t => t.userId))];
+    const screeningIds = [...new Set(allTickets.map(t => t.screeningId))];
+    
+    const [users, screenings] = await Promise.all([
+      prisma.user.findMany({
+        where: { id: { in: userIds } },
         select: {
           id: true,
           name: true,
           email: true,
+          phone: true,
         },
-      },
-      screening: {
+      }),
+      prisma.screening.findMany({
+        where: { id: { in: screeningIds } },
+      }),
+    ]);
+
+    // Fetch movies and cinemas separately
+    const movieIds = [...new Set(screenings.map(s => s.movieId))];
+    const cinemaIds = [...new Set(screenings.map(s => s.cinemaId))];
+    
+    const [movies, cinemas] = await Promise.all([
+      prisma.movie.findMany({
+        where: { id: { in: movieIds } },
+      }),
+      prisma.cinema.findMany({
+        where: { id: { in: cinemaIds } },
+      }),
+    ]);
+
+    // Attach movies and cinemas to screenings
+    const screeningsWithRelations = screenings.map(screening => ({
+      ...screening,
+      movie: movies.find(m => m.id === screening.movieId) || null,
+      cinema: cinemas.find(c => c.id === screening.cinemaId) || null,
+    }));
+
+    // Attach users and screenings to tickets
+    const ticketsWithUsers = allTickets.map(ticket => ({
+      ...ticket,
+      user: users.find(u => u.id === ticket.userId) || null,
+      screening: screeningsWithRelations.find(s => s.id === ticket.screeningId) || null,
+    }));
+
+    // Filter by payment status if specified
+    let filtered = ticketsWithUsers;
+    if (params.paymentStatus) {
+      filtered = filtered.filter(ticket => {
+        const latestPayment = ticket.order?.payments?.[0];
+        return latestPayment?.status === params.paymentStatus;
+      });
+    }
+
+    // Filter in memory for email/phone
+    const searchLower = params.search.toLowerCase();
+    filtered = filtered.filter(ticket =>
+      ticket.code?.toLowerCase().includes(searchLower) ||
+      ticket.orderId?.toLowerCase().includes(searchLower) ||
+      ticket.user?.email?.toLowerCase().includes(searchLower) ||
+      ticket.user?.phone?.toLowerCase().includes(searchLower)
+    );
+
+    total = filtered.length;
+    // Apply pagination after filtering
+    tickets = filtered.slice(skip, skip + size);
+  } else {
+    // Normal query with pagination
+    // Fetch tickets without nested relations first (to avoid Prisma errors)
+    const [ticketsData, total] = await Promise.all([
+      prisma.ticket.findMany({
+        where,
         include: {
-          movie: true,
-          cinema: true,
+          order: {
+            include: {
+              payments: {
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+              },
+            },
+          },
         },
-      },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: size,
+      }),
+      prisma.ticket.count({ where }),
+    ]);
+
+    // Fetch related data separately
+    const userIds = [...new Set(ticketsData.map(t => t.userId))];
+    const screeningIds = [...new Set(ticketsData.map(t => t.screeningId))];
+    
+    const [users, screenings] = await Promise.all([
+      prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+        },
+      }),
+      prisma.screening.findMany({
+        where: { id: { in: screeningIds } },
+      }),
+    ]);
+
+    // Fetch movies and cinemas separately
+    const movieIds = [...new Set(screenings.map(s => s.movieId))];
+    const cinemaIds = [...new Set(screenings.map(s => s.cinemaId))];
+    
+    const [movies, cinemas] = await Promise.all([
+      prisma.movie.findMany({
+        where: { id: { in: movieIds } },
+      }),
+      prisma.cinema.findMany({
+        where: { id: { in: cinemaIds } },
+      }),
+    ]);
+
+    // Attach users, movies, and cinemas to screenings, then to tickets
+    const screeningsWithRelations = screenings.map(screening => ({
+      ...screening,
+      movie: movies.find(m => m.id === screening.movieId) || null,
+      cinema: cinemas.find(c => c.id === screening.cinemaId) || null,
+    }));
+
+    tickets = ticketsData.map(ticket => ({
+      ...ticket,
+      user: users.find(u => u.id === ticket.userId) || null,
+      screening: screeningsWithRelations.find(s => s.id === ticket.screeningId) || null,
+    }));
+
+    // Filter by payment status if specified
+    if (params.paymentStatus) {
+      tickets = tickets.filter(ticket => {
+        const latestPayment = ticket.order?.payments?.[0];
+        return latestPayment?.status === params.paymentStatus;
+      });
+    }
+  }
+
+  return {
+    tickets,
+    pagination: {
+      page,
+      size,
+      total,
+      totalPages: Math.ceil(total / size),
     },
-    orderBy: { createdAt: 'desc' },
-  });
+  };
 };
 
 exports.getById = async (id) => {
-  return await prisma.ticket.findUnique({
+  const ticket = await prisma.ticket.findUnique({
     where: { id },
     include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-      screening: {
+      order: {
         include: {
-          movie: true,
-          cinema: true,
+          payments: {
+            orderBy: { createdAt: 'desc' },
+          },
+          seatStatuses: {
+            include: {
+              seat: true,
+            },
+          },
         },
       },
     },
   });
+
+  if (!ticket) return null;
+
+  // Fetch user, screening, movie, and cinema separately
+  const [user, screening] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: ticket.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+      },
+    }),
+    prisma.screening.findUnique({
+      where: { id: ticket.screeningId },
+    }),
+  ]);
+
+  if (!screening) {
+    return {
+      ...ticket,
+      user: user || null,
+      screening: null,
+    };
+  }
+
+  // Fetch movie and cinema separately
+  const [movie, cinema] = await Promise.all([
+    prisma.movie.findUnique({
+      where: { id: screening.movieId },
+    }),
+    prisma.cinema.findUnique({
+      where: { id: screening.cinemaId },
+    }),
+  ]);
+
+  return {
+    ...ticket,
+    user: user || null,
+    screening: {
+      ...screening,
+      movie: movie || null,
+      cinema: cinema || null,
+    },
+  };
 };
 
 exports.create = async (data, userId) => {
@@ -191,9 +469,13 @@ exports.create = async (data, userId) => {
 };
 
 exports.cancel = async (id) => {
+  if (!id || typeof id !== 'string') {
+    throw new Error('Invalid ticket ID');
+  }
+  
   const ticket = await prisma.ticket.findUnique({ where: { id } });
   if (!ticket) {
-    throw new Error('Ticket not found');
+    throw new Error(`Ticket not found: ${id}`);
   }
   if (ticket.status !== 'PENDING') {
     throw new Error('Only pending tickets can be cancelled');
@@ -206,14 +488,236 @@ exports.cancel = async (id) => {
 };
 
 exports.lock = async (id) => {
+  if (!id || typeof id !== 'string') {
+    throw new Error('Invalid ticket ID');
+  }
+  
   const ticket = await prisma.ticket.findUnique({ where: { id } });
   if (!ticket) {
-    throw new Error('Ticket not found');
+    throw new Error(`Ticket not found: ${id}`);
+  }
+  
+  if (ticket.status !== 'ISSUED' && ticket.status !== 'PENDING') {
+    throw new Error('Only ISSUED or PENDING tickets can be locked');
   }
 
   return await prisma.ticket.update({
     where: { id },
     data: { status: 'LOCKED' },
   });
+};
+
+exports.unlock = async (id) => {
+  if (!id || typeof id !== 'string') {
+    throw new Error('Invalid ticket ID');
+  }
+  
+  const ticket = await prisma.ticket.findUnique({ where: { id } });
+  if (!ticket) {
+    throw new Error(`Ticket not found: ${id}`);
+  }
+  
+  if (ticket.status !== 'LOCKED') {
+    throw new Error('Only LOCKED tickets can be unlocked');
+  }
+
+  // Restore to previous status (default to ISSUED)
+  return await prisma.ticket.update({
+    where: { id },
+    data: { status: 'ISSUED' },
+  });
+};
+
+exports.refund = async (id, reason) => {
+  if (!id || typeof id !== 'string') {
+    throw new Error('Invalid ticket ID');
+  }
+  
+  const ticket = await prisma.ticket.findUnique({
+    where: { id },
+    include: { order: { include: { payments: true } } },
+  });
+  
+  if (!ticket) {
+    throw new Error(`Ticket not found: ${id}`);
+  }
+  
+  if (ticket.status !== 'ISSUED') {
+    throw new Error('Only ISSUED tickets can be refunded');
+  }
+  
+  // Check if payment was made
+  const paidPayment = ticket.order?.payments?.find(p => p.status === 'PAID');
+  if (!paidPayment) {
+    throw new Error('No paid payment found for this ticket');
+  }
+  
+  // TODO: Call payment provider to refund
+  // For now, just update status
+  // In production, this should:
+  // 1. Call payment provider refund API
+  // 2. Update Payment status to REFUNDED
+  // 3. Update Order status to REFUNDED
+  // 4. Update Ticket status to REFUNDED
+  
+  return await prisma.ticket.update({
+    where: { id },
+    data: { status: 'REFUNDED' },
+  });
+};
+
+// Export tickets to CSV
+exports.exportToCSV = async (params = {}) => {
+  // Use getAll but without pagination
+  const allParams = { ...params };
+  delete allParams.page;
+  delete allParams.size;
+  
+  const result = await exports.getAll(allParams);
+  const tickets = result.tickets || [];
+  
+  // CSV headers
+  const headers = [
+    'Mã vé',
+    'Phim',
+    'Suất chiếu',
+    'Phòng',
+    'Ghế',
+    'Chi nhánh',
+    'Khách hàng',
+    'Email',
+    'Số điện thoại',
+    'Mã đơn',
+    'Tổng tiền',
+    'Phương thức thanh toán',
+    'Trạng thái thanh toán',
+    'Trạng thái vé',
+    'Tạo lúc',
+  ];
+  
+  // CSV rows
+  const rows = tickets.map(ticket => {
+    const latestPayment = ticket.order?.payments?.[0];
+    const formatDate = (date) => {
+      if (!date) return '';
+      return new Date(date).toLocaleString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    };
+    const formatSeat = (row, col) => {
+      if (!row || !col) return 'N/A';
+      const rowLetter = String.fromCharCode(64 + row);
+      return `${rowLetter}${col}`;
+    };
+    const formatCurrency = (amount) => {
+      return new Intl.NumberFormat('vi-VN', {
+        style: 'currency',
+        currency: 'VND',
+      }).format(amount || 0);
+    };
+    
+    return [
+      ticket.code || '',
+      ticket.screening?.movie?.title || 'N/A',
+      formatDate(ticket.screening?.startTime) || '',
+      ticket.screening?.room || 'N/A',
+      formatSeat(ticket.seatRow, ticket.seatCol),
+      ticket.screening?.cinema?.name || 'N/A',
+      ticket.user?.name || 'N/A',
+      ticket.user?.email || '',
+      ticket.user?.phone || '',
+      ticket.orderId || '',
+      formatCurrency(ticket.order?.totalAmount || ticket.price),
+      latestPayment?.method || 'N/A',
+      latestPayment?.status || 'N/A',
+      ticket.status || '',
+      formatDate(ticket.createdAt) || '',
+    ];
+  });
+  
+  // Combine headers and rows
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+  ].join('\n');
+  
+  return csvContent;
+};
+
+// Bulk operations
+exports.bulkLock = async (ids) => {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error('Ticket IDs are required');
+  }
+  
+  const results = [];
+  for (const id of ids) {
+    try {
+      const ticket = await exports.lock(id);
+      results.push({ id, success: true, ticket });
+    } catch (error) {
+      results.push({ id, success: false, error: error.message });
+    }
+  }
+  
+  return results;
+};
+
+exports.bulkUnlock = async (ids) => {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error('Ticket IDs are required');
+  }
+  
+  const results = [];
+  for (const id of ids) {
+    try {
+      const ticket = await exports.unlock(id);
+      results.push({ id, success: true, ticket });
+    } catch (error) {
+      results.push({ id, success: false, error: error.message });
+    }
+  }
+  
+  return results;
+};
+
+exports.bulkCancel = async (ids) => {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error('Ticket IDs are required');
+  }
+  
+  const results = [];
+  for (const id of ids) {
+    try {
+      const ticket = await exports.cancel(id);
+      results.push({ id, success: true, ticket });
+    } catch (error) {
+      results.push({ id, success: false, error: error.message });
+    }
+  }
+  
+  return results;
+};
+
+exports.bulkRefund = async (ids, reason) => {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error('Ticket IDs are required');
+  }
+  
+  const results = [];
+  for (const id of ids) {
+    try {
+      const ticket = await exports.refund(id, reason);
+      results.push({ id, success: true, ticket });
+    } catch (error) {
+      results.push({ id, success: false, error: error.message });
+    }
+  }
+  
+  return results;
 };
 

@@ -287,7 +287,7 @@ exports.releaseExpiredHolds = async () => {
 
   const now = new Date();
   
-  // Find expired seat statuses
+  // Find expired HELD seat statuses
   const expiredSeatStatuses = await prisma.seatStatus.findMany({
     where: {
       status: 'HELD',
@@ -304,8 +304,32 @@ exports.releaseExpiredHolds = async () => {
     return { released: 0 };
   }
 
+  // Check each expired hold to see if it's still the latest status for that seat
+  // Only release if the latest status is still HELD (not SOLD)
+  const seatsToRelease = [];
+  for (const expiredStatus of expiredSeatStatuses) {
+    // Get latest status for this seat
+    const latestStatus = await prisma.seatStatus.findFirst({
+      where: {
+        seatId: expiredStatus.seatId,
+        screeningId: expiredStatus.screeningId,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Only release if latest status is still HELD and matches this expired status
+    // This prevents releasing holds that have already been converted to SOLD
+    if (latestStatus && latestStatus.id === expiredStatus.id && latestStatus.status === 'HELD') {
+      seatsToRelease.push(expiredStatus);
+    }
+  }
+
+  if (seatsToRelease.length === 0) {
+    return { released: 0 };
+  }
+
   // Get unique order IDs
-  const orderIds = [...new Set(expiredSeatStatuses.map(ss => ss.orderId).filter(Boolean))];
+  const orderIds = [...new Set(seatsToRelease.map(ss => ss.orderId).filter(Boolean))];
 
   // Update expired orders
   if (orderIds.length > 0) {
@@ -322,7 +346,7 @@ exports.releaseExpiredHolds = async () => {
 
   // Create new SeatStatus records with AVAILABLE status to release holds
   await Promise.all(
-    expiredSeatStatuses.map(ss =>
+    seatsToRelease.map(ss =>
       prisma.seatStatus.create({
         data: {
           seatId: ss.seatId,
@@ -334,8 +358,8 @@ exports.releaseExpiredHolds = async () => {
   );
 
   return {
-    released: expiredSeatStatuses.length,
-    seatStatusIds: expiredSeatStatuses.map(ss => ss.id),
+    released: seatsToRelease.length,
+    seatStatusIds: seatsToRelease.map(ss => ss.id),
   };
 };
 

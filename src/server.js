@@ -43,5 +43,9 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Start cleanup job for expired seat holds
+const { startCleanupJob } = require('./jobs/cleanupExpiredHolds');
+startCleanupJob(30000); // Run every 30 seconds
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
