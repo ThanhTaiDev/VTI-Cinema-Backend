@@ -189,15 +189,23 @@ model Payment {
   id         String    @id @default(cuid())
   orderId    String
   ticketId   String?
-  amount     Int
-  method     String
-  status     String    @default("PENDING")
+  amount     Int       // Gross amount
+  fee        Int       @default(0) // Payment gateway fee
+  netAmount  Int       // Net amount after fee (amount - fee)
+  method     String    // Payment method: MOCK, STRIPE, MOMO, VNPAY, etc.
+  status     String    @default("PENDING") // PENDING, PAID, SUCCESS, FAILED, REFUNDED
+  source     String?   // Source: web, app, counter (quầy)
   externalRef String?
   redirectUrl String?
   webhookData String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([method])
+  @@index([source])
+  @@index([createdAt])
 }
 
 enum EventStatus {

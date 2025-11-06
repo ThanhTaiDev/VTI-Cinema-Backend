@@ -20,13 +20,28 @@ exports.create = async (data, userId) => {
     throw new Error('Ticket does not belong to user');
   }
 
+  // Calculate fee based on payment method
+  const feeRates = {
+    MOCK: 0,
+    STRIPE: 0.02,
+    MOMO: 0.015,
+    VNPAY: 0.015,
+  };
+  const paymentAmount = amount || ticket.price;
+  const feeRate = feeRates[method] || 0.02;
+  const fee = Math.round(paymentAmount * feeRate);
+  const netAmount = paymentAmount - fee;
+
   // Create payment
   const payment = await prisma.payment.create({
     data: {
       ticketId,
-      amount: amount || ticket.price,
+      amount: paymentAmount,
+      fee,
+      netAmount,
       method,
       status: 'PENDING',
+      source: 'web',
     },
     include: {
       ticket: {
@@ -153,13 +168,28 @@ exports.initPayment = async (orderId, userId, method, idempotencyKey) => {
     return existingPayment;
   }
 
+  // Calculate fee based on payment method
+  const feeRates = {
+    MOCK: 0,
+    STRIPE: 0.02,
+    MOMO: 0.015,
+    VNPAY: 0.015,
+  };
+  const paymentMethod = method || 'MOCK';
+  const feeRate = feeRates[paymentMethod] || 0.02;
+  const fee = Math.round(order.totalAmount * feeRate);
+  const netAmount = order.totalAmount - fee;
+
   // Create payment
   const payment = await prisma.payment.create({
     data: {
       orderId,
       amount: order.totalAmount,
-      method: method || 'mock',
+      fee,
+      netAmount,
+      method: paymentMethod,
       status: 'PENDING',
+      source: 'web',
       webhookData: JSON.stringify({ idempotencyKey }),
     },
     include: {
@@ -243,12 +273,26 @@ exports.handleWebhook = async (webhookData, signature) => {
     console.log('[Webhook] Creating payment for order:', orderId);
 
     // Create payment if doesn't exist (for mock testing)
+    // Calculate fee for mock payment
+    const feeRates = {
+      MOCK: 0,
+      STRIPE: 0.02,
+      MOMO: 0.015,
+      VNPAY: 0.015,
+    };
+    const feeRate = feeRates['MOCK'] || 0;
+    const fee = Math.round(order.totalAmount * feeRate);
+    const netAmount = order.totalAmount - fee;
+
     payment = await prisma.payment.create({
       data: {
         orderId,
         amount: order.totalAmount,
-        method: 'mock',
+        fee,
+        netAmount,
+        method: 'MOCK',
         status: 'PENDING',
+        source: 'web',
         webhookData: JSON.stringify(webhookData),
       },
       include: { order: true },
