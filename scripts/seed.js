@@ -45,6 +45,7 @@ async function main() {
   await prisma.screening.deleteMany({});
   await prisma.movie.deleteMany({});
   await prisma.cinema.deleteMany({});
+  await prisma.event.deleteMany({});
   console.log('✅ Existing data deleted');
 
   // Create admin user
@@ -502,12 +503,84 @@ async function main() {
     }
   }
 
+  // Helper function to generate slug from title
+  const generateSlug = (title) => {
+    return title.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  };
+
+  // Create 4 sample events
+  console.log('🎉 Creating events...');
+  const events = [
+    {
+      title: 'SNACK ĐỦ VỊ - PHIM HAY HẾT Ý',
+      slug: 'snack-du-vi-phim-hay-het-y',
+      description: 'Khuyến mãi đặc biệt: Mua snack giảm giá 25K khi mua vé xem phim. Áp dụng từ 01.06.2025',
+      content: '<p>Thưởng thức các món snack đa dạng từ các thương hiệu nổi tiếng như Karamucho, Koimucho, Gokochi với giá ưu đãi chỉ 25K khi mua vé xem phim.</p><p>Áp dụng cho tất cả các suất chiếu trong tháng 6/2025.</p>',
+      imageUrl: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=800',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=400',
+      startDate: new Date('2025-06-01'),
+      endDate: new Date('2025-06-30'),
+      status: 'ACTIVE',
+      isFeatured: true,
+    },
+    {
+      title: 'NGÀY TRI ÂN - MIỄN PHÍ BẮP NƯỚC',
+      slug: 'ngay-tri-an-mien-phi-bap-nuoc',
+      description: 'Thứ Hai đầu tiên của mỗi tháng: Mua vé 2D chỉ từ 45K và được tặng 1 lần chấm thêm bắp & nước miễn phí',
+      content: '<p>Chương trình tri ân khách hàng đặc biệt vào thứ Hai đầu tiên của mỗi tháng. Mua vé 2D chỉ từ 45K và nhận ngay 1 lần chấm thêm bắp & nước miễn phí.</p><p>Áp dụng cho tất cả các rạp trong hệ thống.</p>',
+      imageUrl: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-12-31'),
+      status: 'ACTIVE',
+      isFeatured: true,
+    },
+    {
+      title: 'U22 - GIÁ VÉ CHỈ TỪ 45.000Đ',
+      slug: 'u22-gia-ve-chi-tu-45000d',
+      description: 'Ưu đãi đặc biệt cho khách hàng dưới 22 tuổi: Giá vé chỉ từ 45.000đ cho tất cả các suất chiếu',
+      content: '<p>Chương trình ưu đãi dành riêng cho khách hàng dưới 22 tuổi. Giá vé chỉ từ 45.000đ cho tất cả các suất chiếu 2D.</p><p>Áp dụng cả tuần, không giới hạn số lượng vé. Xuất trình CMND/CCCD khi mua vé.</p>',
+      imageUrl: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=800',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=400',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-12-31'),
+      status: 'ACTIVE',
+      isFeatured: false,
+    },
+    {
+      title: 'COMBO GIA ĐÌNH - TIẾT KIỆM 30%',
+      slug: 'combo-gia-dinh-tiet-kiem-30',
+      description: 'Combo gia đình gồm 4 vé + 2 bắp lớn + 2 nước lớn. Tiết kiệm 30% so với mua lẻ',
+      content: '<p>Combo gia đình hoàn hảo cho cả nhà: 4 vé xem phim + 2 bắp lớn + 2 nước lớn. Tiết kiệm 30% so với mua lẻ.</p><p>Áp dụng cho tất cả các suất chiếu. Có thể mua trực tiếp tại quầy hoặc đặt online.</p>',
+      imageUrl: 'https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=800',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=400',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-12-31'),
+      status: 'ACTIVE',
+      isFeatured: false,
+    },
+  ];
+
+  for (const eventData of events) {
+    // Ensure slug is set
+    if (!eventData.slug) {
+      eventData.slug = generateSlug(eventData.title);
+    }
+    const event = await prisma.event.create({ data: eventData });
+    console.log(`✅ Created event: ${event.title} (slug: ${event.slug})`);
+  }
+
   console.log('✨ Seeding completed!');
   console.log('\n=== Summary ===');
   console.log(`📽️  Movies: ${allMovies.length}`);
   console.log(`🎬 Cinemas: ${cinemas.length}`);
   console.log(`🎫 Screenings: ${allMovies.length * 5}`);
   console.log(`💺 Seats per screening: ${ROWS * COLS}`);
+  console.log(`🎉 Events: ${events.length}`);
   console.log('\n=== Login Credentials ===');
   console.log('Admin:');
   console.log('  Email: admin@vticinema.com');

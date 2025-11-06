@@ -199,3 +199,31 @@ model Payment {
   updatedAt  DateTime  @updatedAt
   order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
+
+enum EventStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  title       String
+  slug        String?     @unique
+  description String?
+  content     String?     // Rich text content
+  imageUrl    String?     // Main banner image
+  thumbnailUrl String?    // Thumbnail for list view
+  startDate   DateTime?
+  endDate     DateTime?
+  status      EventStatus @default(ACTIVE)
+  isFeatured  Boolean     @default(false)
+  viewCount   Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  @@index([status])
+  @@index([isFeatured])
+  @@index([startDate])
+  @@index([endDate])
+}

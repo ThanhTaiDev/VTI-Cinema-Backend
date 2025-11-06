@@ -20,6 +20,7 @@ const paymentRoutes = require('./routes/payments');
 const revenueRoutes = require('./routes/revenue');
 const seatRoutes = require('./routes/seats');
 const orderRoutes = require('./routes/orders');
+const eventRoutes = require('./routes/events');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/movies', movieRoutes);
@@ -32,6 +33,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/revenue', revenueRoutes);
 app.use('/api/seats', seatRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/events', eventRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
