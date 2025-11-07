@@ -70,7 +70,7 @@ exports.getById = async (id) => {
   return await prisma.payment.findUnique({
     where: { id },
     include: {
-      ticket: {
+      order: {
         include: {
           screening: {
             include: {
@@ -78,8 +78,10 @@ exports.getById = async (id) => {
               cinema: true,
             },
           },
-          user: true,
         },
+      },
+      refunds: {
+        orderBy: { createdAt: 'desc' },
       },
     },
   });
@@ -90,7 +92,10 @@ exports.verify = async (id, data) => {
   
   const payment = await prisma.payment.findUnique({
     where: { id },
-    include: { ticket: true },
+    include: { 
+      order: true,
+      refunds: true,
+    },
   });
 
   if (!payment) {

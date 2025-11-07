@@ -16,9 +16,28 @@ async function receiveWebhook(req, res, next) {
     });
 
     // Always return 200 OK to prevent gateway retries
+    // If payment was updated, include payment info in response
+    let payment = null;
+    if (result.paymentId) {
+      const prisma = require('../../prismaClient');
+      payment = await prisma.payment.findUnique({
+        where: { id: result.paymentId },
+        include: { order: true },
+      });
+    }
+
     res.status(200).json({
       success: result.success,
       message: result.message,
+      payment: payment ? {
+        id: payment.id,
+        status: payment.status,
+        amount: payment.amount,
+        fee: payment.fee,
+        net: payment.net,
+        gateway: payment.gateway,
+        orderId: payment.orderId,
+      } : null,
     });
   } catch (error) {
     // Log error but still return 200 OK

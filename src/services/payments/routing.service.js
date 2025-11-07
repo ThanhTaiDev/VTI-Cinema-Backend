@@ -3,60 +3,71 @@ const { getGatewayByCode } = require('../../gateways/GatewayFactory');
 
 /**
  * Select payment gateway based on order, amount, and user
- * @param {Object} params - { order, amount, user }
- * @returns {Promise<Object>} - Gateway instance
+ * @param {Object} params - { order, amount, user, method }
+ * @returns {Promise<Object>} - { record: PaymentGateway, instance: GatewayInstance }
  */
-async function selectGateway({ order, amount, user }) {
-  // Get enabled gateways from database
-  const gateways = await prisma.paymentGateway.findMany({
-    where: {
-      enabled: true,
-      locked: false,
-    },
-    orderBy: {
-      code: 'asc',
-    },
+async function selectGateway({ order, amount, user, method }) {
+  // Get all gateways from database
+  const allGateways = await prisma.paymentGateway.findMany({
+    orderBy: { code: 'asc' },
   });
 
-  if (gateways.length === 0) {
-    // Fallback to mock if no gateways configured
-    return getGatewayByCode('mock');
-  }
+  let selectedGatewayRecord = null;
+  let selectedGatewayInstance = null;
 
   // Simple routing logic:
   // - Amount < 2,000,000 VND → MoMo
   // - Amount >= 2,000,000 VND → VNPay
   // - Fallback to mock for dev
-  let selectedCode = 'mock';
+  let preferredCode = 'mock';
 
   if (amount < 2000000) {
-    // Try MoMo first
-    const momoGateway = gateways.find(g => g.code === 'momo');
-    if (momoGateway) {
-      selectedCode = 'momo';
-    } else {
-      // Fallback to first available gateway
-      selectedCode = gateways[0].code;
-    }
+    preferredCode = 'momo';
   } else {
-    // Try VNPay for large amounts
-    const vnpayGateway = gateways.find(g => g.code === 'vnpay');
-    if (vnpayGateway) {
-      selectedCode = 'vnpay';
+    preferredCode = 'vnpay';
+  }
+
+  // Try to find the preferred gateway
+  selectedGatewayRecord = allGateways.find(g => g.code === preferredCode);
+
+  // If preferred gateway is not found or not available, try other enabled gateways
+  if (!selectedGatewayRecord || !selectedGatewayRecord.enabled || selectedGatewayRecord.locked) {
+    const availableGateways = allGateways.filter(g => g.enabled && !g.locked);
+    if (availableGateways.length > 0) {
+      selectedGatewayRecord = availableGateways.find(g => g.code === preferredCode) || availableGateways[0];
     } else {
-      // Fallback to first available gateway
-      selectedCode = gateways[0].code;
+      // Fallback to mock if no other gateways are available
+      selectedGatewayRecord = allGateways.find(g => g.code === 'mock');
     }
   }
 
-  // Get gateway instance
-  const gateway = getGatewayByCode(selectedCode);
-  if (!gateway) {
-    // Final fallback to mock
-    return getGatewayByCode('mock');
+  if (!selectedGatewayRecord) {
+    throw new Error('No payment gateway available');
   }
 
-  return gateway;
+  // Handle disabled/locked gateways
+  if (!selectedGatewayRecord.enabled || selectedGatewayRecord.locked) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(`Payment gateway ${selectedGatewayRecord.name} is unavailable.`);
+    } else {
+      console.warn(`[DEV MODE] Falling back to MOCK gateway because ${selectedGatewayRecord.name} is ${selectedGatewayRecord.locked ? 'locked' : 'disabled'}.`);
+      selectedGatewayRecord = allGateways.find(g => g.code === 'mock');
+      if (!selectedGatewayRecord) {
+        throw new Error('Mock payment gateway not found, and other gateways are unavailable.');
+      }
+    }
+  }
+
+  selectedGatewayInstance = getGatewayByCode(selectedGatewayRecord.code);
+
+  if (!selectedGatewayInstance) {
+    throw new Error(`Gateway instance for ${selectedGatewayRecord.code} not found.`);
+  }
+
+  return {
+    record: selectedGatewayRecord,
+    instance: selectedGatewayInstance,
+  };
 }
 
 module.exports = {

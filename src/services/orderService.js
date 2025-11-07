@@ -346,73 +346,129 @@ exports.updateOrderStatus = async (orderId, status) => {
 
     // If payment successful, create new SeatStatus records with SOLD status and update tickets
     if (status === 'PAID') {
-      // Create new SeatStatus records with SOLD status (don't update Seat directly)
-      const soldStatuses = await Promise.all(
-        order.seatStatuses.map((seatStatus) =>
-          tx.seatStatus.create({
-            data: {
-              seatId: seatStatus.seatId,
-              screeningId: order.screeningId,
-              status: 'SOLD',
-              orderId: order.id,
-            },
-            include: {
-              seat: true,
-            },
-          })
-        )
-      );
-
-      // Update existing tickets from PENDING to ISSUED
-      const existingTickets = await tx.ticket.findMany({
-        where: {
+      console.log(`[OrderService] Updating order ${orderId} to PAID, creating SOLD seat statuses`);
+      
+      // Get seat IDs from order
+      let seatIds = [];
+      if (order.seatIds) {
+        try {
+          seatIds = typeof order.seatIds === 'string' ? JSON.parse(order.seatIds) : order.seatIds;
+          console.log(`[OrderService] Found ${seatIds.length} seat IDs from order.seatIds`);
+        } catch (e) {
+          console.error('[OrderService] Error parsing seatIds:', e);
+        }
+      }
+      
+      // If no seatIds from order, try to get from seatStatuses
+      if (seatIds.length === 0 && order.seatStatuses && order.seatStatuses.length > 0) {
+        seatIds = order.seatStatuses.map(ss => ss.seatId);
+        console.log(`[OrderService] Found ${seatIds.length} seat IDs from order.seatStatuses`);
+      }
+      
+      // If still no seatIds, try to get from tickets
+      if (seatIds.length === 0) {
+        const tickets = await tx.ticket.findMany({
+          where: { orderId: order.id },
+          select: { seatId: true },
+        });
+        seatIds = tickets.map(t => t.seatId).filter(Boolean);
+        console.log(`[OrderService] Found ${seatIds.length} seat IDs from tickets`);
+      }
+      
+      if (seatIds.length === 0) {
+        console.error(`[OrderService] ERROR: No seat IDs found for order ${orderId}. Order data:`, {
           orderId: order.id,
-          status: 'PENDING',
-        },
-      });
-
-      let tickets = [];
-      if (existingTickets.length > 0) {
-        // Update existing tickets to ISSUED
-        tickets = await Promise.all(
-          existingTickets.map(ticket =>
-            tx.ticket.update({
-              where: { id: ticket.id },
-              data: { status: 'ISSUED' },
+          seatIds: order.seatIds,
+          seatStatusesCount: order.seatStatuses?.length || 0,
+          screeningId: order.screeningId,
+        });
+      } else {
+        console.log(`[OrderService] Creating ${seatIds.length} SOLD seat statuses for order ${orderId}`);
+        // Create new SeatStatus records with SOLD status (don't update Seat directly)
+        const soldStatuses = await Promise.all(
+          seatIds.map((seatId) =>
+            tx.seatStatus.create({
+              data: {
+                seatId: seatId,
+                screeningId: order.screeningId,
+                status: 'SOLD',
+                orderId: order.id,
+              },
+              include: {
+                seat: true,
+              },
             })
           )
         );
-      } else {
-        // Fallback: Create tickets if they don't exist (shouldn't happen with new flow)
-        const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
-        tickets = await Promise.all(
-          soldStatuses.map(async (seatStatus, index) => {
-            const seat = seatStatus.seat;
-            const individualTicketCode = `${ticketCode}-${index + 1}`;
-            
-            return await tx.ticket.create({
-              data: {
-                orderId: order.id,
-                screeningId: order.screeningId,
-                seatId: seat.id,
-                seatRow: seat.row,
-                seatCol: seat.col,
-                userId: order.userId,
-                status: 'ISSUED',
-                price: Math.round(order.totalAmount / soldStatuses.length),
-                code: individualTicketCode,
-                // No qrCode for individual tickets - use order's QR code
-                qrCode: null,
-              },
-            });
-          })
-        );
-      }
+        console.log(`[OrderService] Successfully created ${soldStatuses.length} SOLD seat statuses`);
 
-      return {
-        ...updatedOrder,
-        tickets,
-      };
+        // Update existing tickets from PENDING to ISSUED
+        // First, try to find ALL tickets for this order (not just PENDING)
+        const allTickets = await tx.ticket.findMany({
+          where: {
+            orderId: order.id,
+          },
+        });
+        
+        console.log(`[OrderService] Found ${allTickets.length} tickets for order ${orderId}`);
+        
+        // Filter for PENDING tickets
+        const existingTickets = allTickets.filter(t => t.status === 'PENDING');
+        console.log(`[OrderService] Found ${existingTickets.length} PENDING tickets to update`);
+
+        let tickets = [];
+        if (existingTickets.length > 0) {
+          // Update existing tickets to ISSUED
+          console.log(`[OrderService] Updating ${existingTickets.length} tickets from PENDING to ISSUED`);
+          tickets = await Promise.all(
+            existingTickets.map(ticket => {
+              console.log(`[OrderService] Updating ticket ${ticket.id} (code: ${ticket.code}) to ISSUED`);
+              return tx.ticket.update({
+                where: { id: ticket.id },
+                data: { status: 'ISSUED' },
+              });
+            })
+          );
+          console.log(`[OrderService] Successfully updated ${tickets.length} tickets to ISSUED`);
+        } else if (allTickets.length > 0) {
+          // Tickets exist but are not PENDING - log warning
+          console.warn(`[OrderService] Order ${orderId} has ${allTickets.length} tickets but none are PENDING. Current statuses:`, allTickets.map(t => ({ id: t.id, status: t.status })));
+          tickets = allTickets; // Return existing tickets
+        } else {
+          // No tickets found - create them
+          console.log(`[OrderService] No tickets found for order ${orderId}, creating new tickets`);
+          const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
+          tickets = await Promise.all(
+            soldStatuses.map(async (seatStatus, index) => {
+              const seat = seatStatus.seat;
+              const individualTicketCode = `${ticketCode}-${index + 1}`;
+              
+              console.log(`[OrderService] Creating ticket ${individualTicketCode} for seat ${seat.row}${seat.col}`);
+              return await tx.ticket.create({
+                data: {
+                  orderId: order.id,
+                  screeningId: order.screeningId,
+                  seatId: seat.id,
+                  seatRow: seat.row,
+                  seatCol: seat.col,
+                  userId: order.userId,
+                  status: 'ISSUED',
+                  price: Math.round(order.totalAmount / soldStatuses.length),
+                  code: individualTicketCode,
+                  // No qrCode for individual tickets - use order's QR code
+                  qrCode: null,
+                },
+              });
+            })
+          );
+          console.log(`[OrderService] Successfully created ${tickets.length} new tickets with ISSUED status`);
+        }
+
+        return {
+          ...updatedOrder,
+          tickets,
+        };
+      }
     }
 
     return updatedOrder;

@@ -33,9 +33,20 @@ class MoMoService extends BaseGateway {
 
   /**
    * Verify webhook signature (stub)
+   * DEMO ONLY - DO NOT USE IN PRODUCTION
    */
   async verifyWebhook({ headers, body }) {
     try {
+      // In dev mode, allow webhooks without signature for easier testing
+      if (process.env.NODE_ENV !== 'production') {
+        const signature = headers['x-signature'] || headers['signature'] || '';
+        // If no signature provided, allow it in dev mode
+        if (!signature) {
+          console.log('[MoMo Webhook] DEV MODE: Allowing webhook without signature');
+          return { ok: true };
+        }
+      }
+      
       // TODO: Implement actual MoMo signature verification
       const signature = headers['x-signature'] || headers['signature'] || '';
       
@@ -50,7 +61,7 @@ class MoMoService extends BaseGateway {
         .update(payloadString)
         .digest('hex');
       
-      if (signature !== expectedSignature) {
+      if (signature !== expectedSignature && signature !== `sha256=${expectedSignature}`) {
         return { ok: false, reason: 'Invalid signature' };
       }
 

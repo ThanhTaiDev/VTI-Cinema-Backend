@@ -63,5 +63,15 @@ startTicketCleanupJob(30000); // Run every 30 seconds
 const { startCleanupJob: startPaymentCleanupJob } = require('./jobs/cleanupExpiredPayments');
 startPaymentCleanupJob(30000); // Run every 30 seconds
 
+// Start payment expiry job (DEMO ONLY - requires node-cron)
+// Note: Payment expiry is also handled by cleanupExpiredPayments, but this provides additional checking
+try {
+  const { startPaymentExpiryJob } = require('./jobs/paymentExpiry');
+  startPaymentExpiryJob();
+} catch (err) {
+  // node-cron may not be installed, that's okay - cleanupExpiredPayments handles it
+  console.log('[Server] Payment expiry job skipped (node-cron optional)');
+}
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -33,14 +33,23 @@ class MockPayService extends BaseGateway {
   async verifyWebhook({ headers, body }) {
     try {
       const signature = headers['x-signature'] || headers['signature'] || '';
-      const payloadString = typeof body === 'string' ? body : JSON.stringify(body);
-      const expectedSignature = crypto
-        .createHmac('sha256', this.secretKey)
-        .update(payloadString)
-        .digest('hex');
       
-      if (signature !== expectedSignature && signature !== `sha256=${expectedSignature}`) {
-        return { ok: false, reason: 'Invalid signature' };
+      // In dev mode, allow webhooks without signature for easier testing
+      if (process.env.NODE_ENV !== 'production' && !signature) {
+        return { ok: true };
+      }
+      
+      // If signature is provided, verify it
+      if (signature) {
+        const payloadString = typeof body === 'string' ? body : JSON.stringify(body);
+        const expectedSignature = crypto
+          .createHmac('sha256', this.secretKey)
+          .update(payloadString)
+          .digest('hex');
+        
+        if (signature !== expectedSignature && signature !== `sha256=${expectedSignature}`) {
+          return { ok: false, reason: 'Invalid signature' };
+        }
       }
 
       return { ok: true };

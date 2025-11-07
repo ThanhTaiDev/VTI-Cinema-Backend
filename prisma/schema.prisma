@@ -210,6 +210,8 @@ model Payment {
   source           String?  // Keep old field for backward compatibility
   errorCode        String?
   errorMessage     String?
+  metadata         Json?    // DEMO ONLY - Store gateway-specific data (QR data, card token, etc.)
+  expiresAt        DateTime? // Payment expiry time (10 minutes from creation)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -258,13 +260,23 @@ model Refund {
 }
 
 model PaymentGateway {
-  code        String  @id   // 'mock','momo','vnpay'
-  name        String
-  enabled     Boolean @default(true)
-  locked      Boolean @default(false) // khóa tạm khi lỗi
-  configJson  String? // JSON string
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               Int      @id @default(autoincrement())
+  name             String
+  code             String   @unique   // 'mock','momo','vnpay'
+  enabled          Boolean  @default(true)
+  locked           Boolean  @default(false)
+  lockedReason     String?
+  feeType          String   @default("PERCENT")
+  feePercent       Float?
+  feeFixed         Int?
+  minFee           Int?
+  maxFee           Int?
+  vatOnFeePercent  Float?
+  methodOverrides  Json?
+  rules            Json?
+  configJson       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 enum EventStatus {

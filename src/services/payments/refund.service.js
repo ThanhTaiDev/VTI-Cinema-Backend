@@ -1,5 +1,7 @@
+// DEMO ONLY - DO NOT USE IN PRODUCTION
 const prisma = require('../../prismaClient');
 const { getGatewayByCode } = require('../../gateways/GatewayFactory');
+const crypto = require('crypto');
 
 /**
  * Full refund
@@ -36,6 +38,25 @@ async function refundFull(paymentId, reason) {
     throw new Error(`Unknown gateway: ${payment.gateway}`);
   }
 
+  // Generate idempotency key for refund
+  const idempotencyKey = crypto
+    .createHash('sha256')
+    .update(`${payment.id}:full:${payment.amount}:${Date.now()}`)
+    .digest('hex');
+
+  // Check if refund already exists (idempotency)
+  const existingRefund = await prisma.refund.findUnique({
+    where: { idempotencyKey },
+  });
+
+  if (existingRefund) {
+    return {
+      refund: existingRefund,
+      status: existingRefund.status,
+      message: 'Refund already processed (idempotent)',
+    };
+  }
+
   // Create refund record
   const refund = await prisma.refund.create({
     data: {
@@ -43,6 +64,7 @@ async function refundFull(paymentId, reason) {
       amount: payment.amount,
       reason: reason || 'Full refund',
       status: 'PENDING',
+      idempotencyKey,
     },
   });
 
@@ -136,6 +158,25 @@ async function refundPartial(paymentId, amount, reason) {
     throw new Error(`Refund amount exceeds payment amount. Max refund: ${payment.amount - totalRefunded}`);
   }
 
+  // Generate idempotency key for refund
+  const idempotencyKey = crypto
+    .createHash('sha256')
+    .update(`${payment.id}:partial:${amount}:${Date.now()}`)
+    .digest('hex');
+
+  // Check if refund already exists (idempotency)
+  const existingRefund = await prisma.refund.findUnique({
+    where: { idempotencyKey },
+  });
+
+  if (existingRefund) {
+    return {
+      refund: existingRefund,
+      status: existingRefund.status,
+      message: 'Refund already processed (idempotent)',
+    };
+  }
+
   // Create refund record
   const refund = await prisma.refund.create({
     data: {
@@ -143,6 +184,7 @@ async function refundPartial(paymentId, amount, reason) {
       amount,
       reason: reason || 'Partial refund',
       status: 'PENDING',
+      idempotencyKey,
     },
   });
 
