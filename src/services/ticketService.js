@@ -594,10 +594,17 @@ exports.refund = async (id, reason) => {
       throw new Error('Only ISSUED tickets can be refunded');
     }
     
-    // Check if payment was made
-    const paidPayment = ticket.order?.payments?.find(p => p.status === 'PAID');
+    // Check if payment was made - support both SUCCESS and PAID status
+    const paidPayment = ticket.order?.payments?.find(p => 
+      p.status === 'SUCCESS' || p.status === 'PAID'
+    );
     if (!paidPayment) {
       throw new Error('No paid payment found for this ticket');
+    }
+
+    // Check if payment is already refunded
+    if (paidPayment.status === 'REFUNDED' || paidPayment.status === 'PARTIAL_REFUNDED') {
+      throw new Error('Payment already refunded');
     }
     
     // Update ticket status to REFUNDED
@@ -616,13 +623,26 @@ exports.refund = async (id, reason) => {
       },
     });
 
-    // TODO: Call payment provider to refund
-    // In production, this should:
-    // 1. Call payment provider refund API
-    // 2. Update Payment status to REFUNDED
-    // 3. Update Order status to REFUNDED (if all tickets refunded)
+    // Check if this is a partial refund (multiple tickets in order)
+    const allTickets = await tx.ticket.findMany({
+      where: { orderId: ticket.orderId },
+    });
     
-    return updatedTicket;
+    const remainingTickets = allTickets.filter(t => t.status === 'ISSUED');
+    const isLastTicket = remainingTickets.length === 1 && remainingTickets[0].id === ticket.id;
+    
+    // Calculate refund amount for this ticket
+    const ticketPrice = ticket.price;
+    
+    // Return ticket info for refund processing outside transaction
+    return {
+      ticket: updatedTicket,
+      paymentId: paidPayment.id,
+      orderId: ticket.orderId,
+      isLastTicket,
+      ticketPrice,
+      reason: reason || `Refund ticket ${ticket.code}`,
+    };
   }, {
     timeout: 10000,
   });
@@ -841,16 +861,69 @@ exports.bulkRefund = async (ids, reason) => {
     throw new Error('Ticket IDs are required');
   }
   
+  // Use new refund service
+  const refundService = require('./refunds/refund.service');
   const results = [];
+  
   for (const id of ids) {
     try {
-      const ticket = await exports.refund(id, reason);
-      results.push({ id, success: true, ticket });
+      // Use new refund service which handles everything (ticket, payment, order)
+      const result = await refundService.refundTicket({
+        ticketId: id,
+        reason: reason || `Bulk refund ticket ${id}`,
+        actorId: 'system', // System actor for bulk operations
+      });
+      
+      // Check if ticket was actually refunded (even if status is not SUCCESS)
+      // Wait a bit to ensure database is updated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const ticket = await prisma.ticket.findUnique({ where: { id } });
+      const isRefunded = ticket && ticket.status === 'REFUNDED';
+      
+      // If ticket is refunded, it's a success regardless of result.status
+      const success = result.status === 'SUCCESS' || isRefunded;
+      
+      results.push({ 
+        id, 
+        success: success, 
+        ticket: result.ticket || ticket,
+        error: success ? undefined : (result.message || 'Refund failed'),
+      });
     } catch (error) {
-      results.push({ id, success: false, error: error.message });
+      // Check if ticket was actually refunded despite the error
+      // Wait a bit to ensure database is updated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      try {
+        const ticket = await prisma.ticket.findUnique({ where: { id } });
+        const isRefunded = ticket && ticket.status === 'REFUNDED';
+        
+        if (isRefunded) {
+          // Ticket was refunded successfully, even though there was an error
+          results.push({ 
+            id, 
+            success: true, 
+            ticket: ticket,
+            error: undefined,
+          });
+        } else {
+          // Ticket was not refunded, report the error
+          results.push({ 
+            id, 
+            success: false, 
+            error: error.message || 'Refund failed',
+          });
+        }
+      } catch (checkError) {
+        // If we can't check the ticket status, report the original error
+        results.push({ 
+          id, 
+          success: false, 
+          error: error.message || 'Refund failed',
+        });
+      }
     }
   }
   
-  return results;
+  return { results };
 };
 

@@ -20,6 +20,7 @@ model User {
   gender      String?
   createdAt   DateTime  @default(now())
   tickets     Ticket[]
+  reviews     Review[]
 }
 
 model Cinema {
@@ -31,6 +32,7 @@ model Cinema {
   longitude Float?
   logoUrl   String?
   phone     String?
+  screenings Screening[]
 }
 
 enum MovieStatus {
@@ -79,6 +81,7 @@ model Screening {
   endTime   DateTime
   price     Int
   movie     Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  cinema    Cinema   @relation(fields: [cinemaId], references: [id], onDelete: Cascade)
   seats     Seat[]
   seatStatuses SeatStatus[]
   orders    Order[]
@@ -97,6 +100,7 @@ model Review {
   content   String?
   tags      String?
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 enum SeatState {
@@ -186,26 +190,81 @@ model Ticket {
 }
 
 model Payment {
-  id         String    @id @default(cuid())
-  orderId    String
-  ticketId   String?
-  amount     Int       // Gross amount
-  fee        Int       @default(0) // Payment gateway fee
-  netAmount  Int       // Net amount after fee (amount - fee)
-  method     String    // Payment method: MOCK, STRIPE, MOMO, VNPAY, etc.
-  status     String    @default("PENDING") // PENDING, PAID, SUCCESS, FAILED, REFUNDED
-  source     String?   // Source: web, app, counter (quầy)
-  externalRef String?
-  redirectUrl String?
-  webhookData String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id               String   @id @default(cuid())
+  orderId          String
+  userId           String?
+  gateway          String   @default("mock") // 'mock', 'momo', 'vnpay', ...
+  method           String?   // 'qrcode', 'app', 'card', ...
+  amount           Int
+  fee              Int      @default(0)
+  net              Int      @default(0) // New field, can be calculated from amount - fee
+  netAmount        Int?     // Keep old field for backward compatibility
+  currency         String   @default("VND")
+  status           String   // 'PENDING'|'SUCCESS'|'FAILED'|'CANCELED'|'REFUNDED'|'PARTIAL_REFUNDED'
+  providerTxId     String?  // transaction id từ cổng
+  providerOrderId  String?  // order ref ở provider
+  externalRef      String?  // Keep old field for backward compatibility
+  rawPayload       String?  // JSON string (payload đã mask)
+  webhookData      String?  // Keep old field for backward compatibility
+  redirectUrl      String?  // Keep old field for backward compatibility
+  source           String?  // Keep old field for backward compatibility
+  errorCode        String?
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds          Refund[]
 
+  @@index([orderId])
+  @@index([gateway, status])
+  @@index([createdAt])
+  @@index([providerTxId])
   @@index([status])
   @@index([method])
   @@index([source])
-  @@index([createdAt])
+}
+
+model WebhookEvent {
+  id           String   @id @default(cuid())
+  paymentId    String?
+  gateway      String
+  eventType    String
+  receivedAt   DateTime @default(now())
+  rawPayload   String   // JSON string
+  signature    String?
+  verified     Boolean  @default(false)
+  handled      Boolean  @default(false)
+  idempotencyKey String @unique // để chống xử lý lặp
+
+  @@index([gateway])
+  @@index([receivedAt])
+  @@index([idempotencyKey])
+}
+
+model Refund {
+  id            String   @id @default(cuid())
+  paymentId     String
+  amount        Int
+  reason        String?
+  status        String   // 'PENDING'|'SUCCESS'|'FAILED'
+  providerRefundId String?
+  idempotencyKey String? @unique
+  createdAt     DateTime @default(now())
+  payment       Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([status])
+  @@index([idempotencyKey])
+}
+
+model PaymentGateway {
+  code        String  @id   // 'mock','momo','vnpay'
+  name        String
+  enabled     Boolean @default(true)
+  locked      Boolean @default(false) // khóa tạm khi lỗi
+  configJson  String? // JSON string
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 enum EventStatus {

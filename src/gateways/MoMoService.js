@@ -1,0 +1,92 @@
+const BaseGateway = require('./BaseGateway');
+const crypto = require('crypto');
+
+/**
+ * MoMo Payment Gateway (Stub)
+ * TODO: Implement actual MoMo API integration
+ */
+class MoMoService extends BaseGateway {
+  constructor() {
+    super();
+    this.code = 'momo';
+    this.displayName = 'MoMo';
+    this.supportsPartialRefund = false;
+    this.partnerCode = process.env.MOMO_PARTNER_CODE || '';
+    this.accessKey = process.env.MOMO_ACCESS_KEY || '';
+    this.secretKey = process.env.MOMO_SECRET_KEY || '';
+    this.endpoint = process.env.MOMO_ENDPOINT || 'https://test-payment.momo.vn/';
+  }
+
+  /**
+   * Create payment (stub)
+   */
+  async createPayment({ order, amount, meta = {} }) {
+    // TODO: Implement actual MoMo API call
+    const providerRef = `MOMO-${order.id}-${Date.now()}`;
+    const redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/callback?providerRef=${providerRef}&orderId=${order.id}`;
+    
+    return {
+      redirectUrl,
+      providerRef,
+    };
+  }
+
+  /**
+   * Verify webhook signature (stub)
+   */
+  async verifyWebhook({ headers, body }) {
+    try {
+      // TODO: Implement actual MoMo signature verification
+      const signature = headers['x-signature'] || headers['signature'] || '';
+      
+      if (!signature) {
+        return { ok: false, reason: 'Missing signature' };
+      }
+
+      // Stub verification - in production, verify with MoMo's algorithm
+      const payloadString = typeof body === 'string' ? body : JSON.stringify(body);
+      const expectedSignature = crypto
+        .createHmac('sha256', this.secretKey)
+        .update(payloadString)
+        .digest('hex');
+      
+      if (signature !== expectedSignature) {
+        return { ok: false, reason: 'Invalid signature' };
+      }
+
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, reason: error.message };
+    }
+  }
+
+  /**
+   * Parse webhook payload (stub)
+   */
+  async parseWebhook({ headers, body }) {
+    const data = typeof body === 'string' ? JSON.parse(body) : body;
+    
+    return {
+      providerTxId: data.transId || data.orderId || `MOMO-${Date.now()}`,
+      status: data.resultCode === 0 ? 'SUCCESS' : 'FAILED',
+      amount: data.amount || 0,
+      raw: data,
+    };
+  }
+
+  /**
+   * Refund payment (stub)
+   */
+  async refund({ payment, amount, reason }) {
+    // TODO: Implement actual MoMo refund API
+    const providerRefundId = `REFUND-MOMO-${payment.id}-${Date.now()}`;
+    
+    return {
+      providerRefundId,
+      status: 'SUCCESS',
+    };
+  }
+}
+
+module.exports = MoMoService;
+

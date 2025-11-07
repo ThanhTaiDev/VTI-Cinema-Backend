@@ -51,6 +51,12 @@ exports.createOrder = async (data, userId) => {
     const screening = firstSeat.screening;
     const screeningId = screening.id;
 
+    // Check if screening has already started
+    const now = new Date();
+    if (new Date(screening.startTime) < now) {
+      throw new Error('Screening has already started');
+    }
+
     // Verify seat statuses are still held by this user and token
     // Get latest seat statuses for each seat
     const seatStatuses = await Promise.all(
@@ -85,8 +91,7 @@ exports.createOrder = async (data, userId) => {
       throw new Error('Some seats are not held or hold has expired');
     }
 
-    // Check if hold has expired
-    const now = new Date();
+    // Check if hold has expired (now is already defined above)
     const expiredSeatStatuses = validSeatStatuses.filter(ss => 
       ss.holdUntil && new Date(ss.holdUntil) < now
     );

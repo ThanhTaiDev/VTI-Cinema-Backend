@@ -27,24 +27,6 @@ exports.create = async (data, userId) => {
     throw new Error('Rating must be between 1 and 10');
   }
 
-  // Check if user has ticket for this movie
-  // This is a simplified check - you might want to add proper validation
-  const hasTicket = await prisma.ticket.findFirst({
-    where: {
-      userId,
-      screening: {
-        movieId,
-      },
-      status: {
-        in: ['SUCCESS', 'PENDING'],
-      },
-    },
-  });
-
-  if (!hasTicket) {
-    throw new Error('You need to purchase a ticket to review this movie');
-  }
-
   return await prisma.review.create({
     data: {
       movieId,

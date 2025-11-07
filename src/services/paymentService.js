@@ -156,13 +156,16 @@ exports.initPayment = async (orderId, userId, method, idempotencyKey) => {
   order.screening.movie = movie;
   order.screening.cinema = cinema;
 
-  // Check if payment already exists
+  // Check if payment already exists with PENDING status
   const existingPayment = await prisma.payment.findFirst({
-    where: { orderId },
+    where: {
+      orderId,
+      status: 'PENDING',
+    },
     orderBy: { createdAt: 'desc' },
   });
 
-  if (existingPayment && existingPayment.status === 'PENDING') {
+  if (existingPayment) {
     // Attach order with movie/cinema to existing payment
     existingPayment.order = order;
     return existingPayment;
@@ -171,23 +174,30 @@ exports.initPayment = async (orderId, userId, method, idempotencyKey) => {
   // Calculate fee based on payment method
   const feeRates = {
     MOCK: 0,
+    mock: 0,
     STRIPE: 0.02,
     MOMO: 0.015,
+    momo: 0.015,
     VNPAY: 0.015,
+    vnpay: 0.015,
   };
   const paymentMethod = method || 'MOCK';
   const feeRate = feeRates[paymentMethod] || 0.02;
   const fee = Math.round(order.totalAmount * feeRate);
-  const netAmount = order.totalAmount - fee;
+  const net = order.totalAmount - fee;
 
-  // Create payment
+  // Create payment with new schema fields
   const payment = await prisma.payment.create({
     data: {
       orderId,
+      userId,
+      gateway: paymentMethod.toLowerCase() === 'mock' ? 'mock' : paymentMethod.toLowerCase(),
+      method: paymentMethod.toLowerCase() === 'mock' ? 'qrcode' : paymentMethod.toLowerCase(),
       amount: order.totalAmount,
       fee,
-      netAmount,
-      method: paymentMethod,
+      net, // Use 'net' instead of 'netAmount'
+      netAmount: net, // Keep for backward compatibility
+      currency: 'VND',
       status: 'PENDING',
       source: 'web',
       webhookData: JSON.stringify({ idempotencyKey }),
@@ -237,10 +247,11 @@ exports.initPayment = async (orderId, userId, method, idempotencyKey) => {
  */
 exports.handleWebhook = async (webhookData, signature) => {
   // For mock payment, auto approve
-  const { type, orderId, paymentId } = webhookData;
+  const { type, orderId, paymentId, status: webhookStatus, amount } = webhookData;
 
-  console.log('[Webhook] Received webhook:', { type, orderId, paymentId });
+  console.log('[Webhook] Received webhook:', { type, orderId, paymentId, webhookStatus, amount });
 
+  // Find payment - prioritize PENDING status
   let payment;
   
   if (paymentId) {
@@ -248,7 +259,22 @@ exports.handleWebhook = async (webhookData, signature) => {
       where: { id: paymentId },
       include: { order: true },
     });
-  } else if (orderId) {
+  }
+  
+  // If not found, try to find PENDING payment by orderId
+  if (!payment && orderId) {
+    payment = await prisma.payment.findFirst({
+      where: {
+        orderId,
+        status: 'PENDING', // Only find PENDING payments
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { order: true },
+    });
+  }
+
+  // If still not found, try any payment by orderId (fallback)
+  if (!payment && orderId) {
     payment = await prisma.payment.findFirst({
       where: { orderId },
       orderBy: { createdAt: 'desc' },
@@ -256,70 +282,55 @@ exports.handleWebhook = async (webhookData, signature) => {
     });
   }
 
-  // If payment not found but orderId exists, create payment for mock testing
-  if (!payment && orderId) {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { 
-        screening: true,
-        seatStatuses: true,
-      },
-    });
-    
-    if (!order) {
-      throw new Error(`Order not found: ${orderId}`);
-    }
-
-    console.log('[Webhook] Creating payment for order:', orderId);
-
-    // Create payment if doesn't exist (for mock testing)
-    // Calculate fee for mock payment
-    const feeRates = {
-      MOCK: 0,
-      STRIPE: 0.02,
-      MOMO: 0.015,
-      VNPAY: 0.015,
-    };
-    const feeRate = feeRates['MOCK'] || 0;
-    const fee = Math.round(order.totalAmount * feeRate);
-    const netAmount = order.totalAmount - fee;
-
-    payment = await prisma.payment.create({
-      data: {
-        orderId,
-        amount: order.totalAmount,
-        fee,
-        netAmount,
-        method: 'MOCK',
-        status: 'PENDING',
-        source: 'web',
-        webhookData: JSON.stringify(webhookData),
-      },
-      include: { order: true },
-    });
-  }
-
   if (!payment) {
-    throw new Error('Payment not found and cannot create');
+    throw new Error(`Payment not found for orderId: ${orderId || 'N/A'}, paymentId: ${paymentId || 'N/A'}`);
   }
 
-  // Update payment status
-  const status = type === 'payment.succeeded' || type === 'payment.success' || type === 'SUCCESS' ? 'PAID' : 'FAILED';
+  // Determine payment status
+  // Use 'SUCCESS' for new schema, but also support 'PAID' for backward compatibility
+  const isSuccess = type === 'payment.succeeded' || 
+                    type === 'payment.success' || 
+                    webhookStatus === 'SUCCESS' || 
+                    webhookStatus === 'PAID';
   
-  console.log('[Webhook] Updating payment status to:', status);
+  // Use SUCCESS for new schema (admin panel expects SUCCESS)
+  // But also set externalRef to indicate PAID for frontend compatibility
+  const newStatus = isSuccess ? 'SUCCESS' : 'FAILED';
+  
+  console.log('[Webhook] Updating payment', payment.id, 'status from', payment.status, 'to', newStatus);
 
+  // Calculate providerTxId
+  const providerTxId = webhookData.providerTxId || 
+                       webhookData.providerRef || 
+                       webhookData.paymentId || 
+                       paymentId || 
+                       `MOCK-${orderId || payment.orderId}-${Date.now()}`;
+
+  // Calculate fee and net
+  const finalAmount = amount || payment.amount;
+  const finalFee = payment.fee || 0;
+  const finalNet = finalAmount - finalFee;
+
+  // Update payment - use new schema fields
   const updatedPayment = await prisma.payment.update({
     where: { id: payment.id },
     data: {
-      status,
-      externalRef: webhookData.externalRef || webhookData.paymentId || paymentId || `mock-${orderId}`,
+      status: newStatus,
+      providerTxId: providerTxId,
+      providerOrderId: webhookData.providerRef || payment.providerOrderId,
+      externalRef: providerTxId, // Keep for backward compatibility
+      net: finalNet, // Update net field
+      netAmount: finalNet, // Keep for backward compatibility
+      rawPayload: JSON.stringify(webhookData),
       webhookData: JSON.stringify(webhookData),
+      errorCode: isSuccess ? null : 'WEBHOOK_FAILED',
+      errorMessage: isSuccess ? null : 'Payment failed via webhook',
     },
     include: { order: true },
   });
 
   // Update order status if payment successful
-  if (status === 'PAID') {
+  if (newStatus === 'SUCCESS') {
     console.log('[Webhook] Updating order status to PAID for order:', orderId || payment.orderId);
     try {
       const orderService = require('./orderService');
@@ -327,7 +338,7 @@ exports.handleWebhook = async (webhookData, signature) => {
       console.log('[Webhook] Order status updated successfully');
     } catch (err) {
       console.error('[Webhook] Error updating order status:', err);
-      throw err;
+      // Don't throw, just log
     }
   }
 

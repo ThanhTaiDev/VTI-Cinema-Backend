@@ -60,8 +60,43 @@ exports.unlock = async (req, res, next) => {
 exports.refund = async (req, res, next) => {
   try {
     const { reason } = req.body;
-    const ticket = await ticketService.refund(req.params.id, reason);
-    res.json(ticket);
+    const refundInfo = await ticketService.refund(req.params.id, reason);
+    
+    // Process payment refund outside transaction
+    try {
+      const refundService = require('../services/payments/refund.service');
+      
+      if (refundInfo.isLastTicket) {
+        // Last ticket - full refund
+        await refundService.refundFull(refundInfo.paymentId, refundInfo.reason);
+      } else {
+        // Partial refund
+        await refundService.refundPartial(refundInfo.paymentId, refundInfo.ticketPrice, refundInfo.reason);
+      }
+      
+      // Check if payment is fully refunded and update order
+      const prisma = require('../prismaClient');
+      const payment = await prisma.payment.findUnique({
+        where: { id: refundInfo.paymentId },
+      });
+      
+      if (payment && payment.status === 'REFUNDED') {
+        await prisma.order.update({
+          where: { id: refundInfo.orderId },
+          data: { status: 'REFUNDED' },
+        });
+      }
+      
+      res.json(refundInfo.ticket);
+    } catch (refundError) {
+      // If payment refund fails, rollback ticket status
+      const prisma = require('../prismaClient');
+      await prisma.ticket.update({
+        where: { id: req.params.id },
+        data: { status: 'ISSUED' },
+      });
+      throw new Error(`Payment refund failed: ${refundError.message}`);
+    }
   } catch (err) {
     next(err);
   }

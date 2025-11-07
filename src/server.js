@@ -17,11 +17,13 @@ const ticketRoutes = require('./routes/tickets');
 const userRoutes = require('./routes/users');
 const reviewRoutes = require('./routes/reviews');
 const paymentRoutes = require('./routes/payments');
+const paymentRoutesNew = require('./routes/payment.routes');
 const revenueRoutes = require('./routes/revenue');
 const seatRoutes = require('./routes/seats');
 const orderRoutes = require('./routes/orders');
 const eventRoutes = require('./routes/events');
 const bannerRoutes = require('./routes/banners');
+const refundRoutes = require('./routes/refunds');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/movies', movieRoutes);
@@ -31,11 +33,13 @@ app.use('/api/tickets', ticketRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api', paymentRoutesNew); // New payment routes
 app.use('/api/revenue', revenueRoutes);
 app.use('/api/seats', seatRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/banners', bannerRoutes);
+app.use('/api', refundRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -54,6 +58,10 @@ startSeatCleanupJob(30000); // Run every 30 seconds
 // Start cleanup job for expired PENDING tickets
 const { startCleanupJob: startTicketCleanupJob } = require('./jobs/cleanupExpiredTickets');
 startTicketCleanupJob(30000); // Run every 30 seconds
+
+// Start cleanup job for expired PENDING payments
+const { startCleanupJob: startPaymentCleanupJob } = require('./jobs/cleanupExpiredPayments');
+startPaymentCleanupJob(30000); // Run every 30 seconds
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
