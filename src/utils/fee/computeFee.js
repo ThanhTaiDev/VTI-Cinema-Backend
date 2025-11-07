@@ -93,11 +93,24 @@ function computeFee(gateway, amount, method) {
 
   const feeVat = feeBase * (Number(vatOnFeePercent) || 0);
   const feeTotal = roundCurrency(feeBase + feeVat);
-  const net = Math.max(0, roundCurrency(totalAmount) - feeTotal);
+  
+  // VAT surcharge that customer pays (if vatOnFeePercent > 0)
+  // This is the VAT portion of the fee that customer must pay
+  const vatSurcharge = roundCurrency(feeVat);
+  
+  // Amount customer is charged = order total + VAT surcharge (if any)
+  const amountCharged = roundCurrency(totalAmount + vatSurcharge);
+  
+  // Net amount merchant receives = amount charged - total fee (merchant pays the base fee)
+  // OR: net = orderTotal - feeBase (merchant pays base fee, customer pays VAT on fee)
+  const net = Math.max(0, roundCurrency(amountCharged - feeTotal));
 
   return {
-    fee: feeTotal,
-    net,
+    fee: feeTotal, // Total fee merchant pays (base + VAT)
+    feeBase: roundCurrency(feeBase), // Base fee merchant pays
+    vatSurcharge, // VAT on fee that customer pays (if vatOnFeePercent > 0)
+    amountCharged, // Total amount customer pays (orderTotal + vatSurcharge)
+    net, // Net amount merchant receives
     breakdown: {
       feeBase: roundCurrency(feeBase),
       feeVat: roundCurrency(feeVat),

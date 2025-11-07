@@ -166,6 +166,15 @@ async function getPaymentById(id) {
     }
   }
   
+  // Add vatSurcharge and amountCharged from metadata for easier access
+  if (payment.metadata) {
+    payment.vatSurcharge = payment.metadata.vatSurcharge || 0;
+    payment.amountCharged = payment.metadata.amountCharged || payment.amount;
+  } else {
+    payment.vatSurcharge = 0;
+    payment.amountCharged = payment.amount;
+  }
+  
   return payment;
 }
 
@@ -325,19 +334,25 @@ async function initPayment({ orderId, userId, method = null, gatewayCode = null 
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     // Create payment record
+    // Store vatSurcharge and amountCharged in metadata for easy access
     payment = await prisma.payment.create({
       data: {
         orderId: order.id,
         userId,
         gateway: gatewayRecord.code,
         method: normalizedMethod || 'qrcode',
-        amount: order.totalAmount,
-        fee: feeResult.fee,
-        net: feeResult.net,
+        amount: order.totalAmount, // Order total (before fees)
+        fee: feeResult.fee, // Total fee merchant pays (base + VAT)
+        net: feeResult.net, // Net amount merchant receives
         netAmount: feeResult.net,
         currency: 'VND',
         status: 'PENDING',
         expiresAt,
+        metadata: {
+          vatSurcharge: feeResult.vatSurcharge || 0, // VAT customer pays (if vatOnFeePercent > 0)
+          amountCharged: feeResult.amountCharged || order.totalAmount, // Total amount customer pays
+          feeBase: feeResult.feeBase || 0, // Base fee merchant pays
+        },
       },
     });
   }
@@ -407,6 +422,26 @@ async function initPayment({ orderId, userId, method = null, gatewayCode = null 
             requiresCardInput: true,
           },
           redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/${payment.id}/gateway/card`,
+        },
+      });
+      
+      gatewayResult = {
+        redirectUrl: payment.redirectUrl,
+        providerRef: providerTxId,
+        qrCode: null,
+      };
+    } else if (gatewayRecord.code.toLowerCase() === 'paypal') {
+      // PayPal: Show PayPal login form (DEMO ONLY)
+      payment = await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          providerTxId,
+          providerOrderId: providerTxId,
+          metadata: {
+            providerTxId,
+            requiresPayPalLogin: true,
+          },
+          redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/${payment.id}/gateway/paypal`,
         },
       });
       
@@ -527,13 +562,19 @@ async function initPayment({ orderId, userId, method = null, gatewayCode = null 
     console.warn('[Payment Init] redirectUrl was missing, generated fallback:', gatewayResult.redirectUrl);
   }
 
+  // Get vatSurcharge and amountCharged from metadata
+  const vatSurcharge = payment.metadata?.vatSurcharge || 0;
+  const amountCharged = payment.metadata?.amountCharged || payment.amount;
+
   const result = {
     payment: {
       id: payment.id,
       status: payment.status,
-      amount: payment.amount,
-      fee: payment.fee,
-      net: payment.net,
+      amount: payment.amount, // Order total
+      amountCharged, // Total amount customer pays (orderTotal + vatSurcharge)
+      fee: payment.fee, // Total fee merchant pays
+      vatSurcharge, // VAT customer pays (if vatOnFeePercent > 0)
+      net: payment.net, // Net amount merchant receives
       gateway: payment.gateway,
       method: payment.method,
       providerTxId: payment.providerTxId,

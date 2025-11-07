@@ -281,8 +281,11 @@ async function previewFee({ gatewayCode, amount, method }) {
 
   return {
     gateway: gateway.code,
-    fee: result.fee,
-    net: result.net,
+    fee: result.fee, // Total fee merchant pays
+    feeBase: result.feeBase, // Base fee merchant pays
+    vatSurcharge: result.vatSurcharge || 0, // VAT customer pays (if vatOnFeePercent > 0)
+    amountCharged: result.amountCharged || amount, // Total amount customer pays
+    net: result.net, // Net amount merchant receives
     breakdown: result.breakdown,
   };
 }

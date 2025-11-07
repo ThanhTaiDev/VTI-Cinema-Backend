@@ -7,6 +7,7 @@ const ZaloPayService = require('./ZaloPayService');
 const SmartPayService = require('./SmartPayService');
 const PayooService = require('./PayooService');
 const CreditCardService = require('./CreditCardService');
+const PayPalService = require('./PayPalService');
 
 /**
  * Gateway Factory
@@ -27,6 +28,7 @@ function getGatewayByCode(code) {
     payoo: new PayooService(),
     card: new CreditCardService(),
     credit_card: new CreditCardService(),
+    paypal: new PayPalService(),
   };
   
   return map[normalizedCode] || null;
@@ -46,6 +48,7 @@ function getAllGateways() {
     new SmartPayService(),
     new PayooService(),
     new CreditCardService(),
+    new PayPalService(),
   ];
 }
 

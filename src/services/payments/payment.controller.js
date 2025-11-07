@@ -231,12 +231,90 @@ async function chargeCard(req, res, next) {
   }
 }
 
+/**
+ * Charge PayPal (DEMO ONLY)
+ * DEMO ONLY - DO NOT USE IN PRODUCTION
+ * Simulates PayPal payment flow: user logs in and confirms payment
+ */
+async function chargePayPal(req, res, next) {
+  try {
+    const { email, password } = req.body;
+    const paymentId = req.params.id;
+    const userId = req.user.id;
+
+    // Validate PayPal login input
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    // Get payment
+    const payment = await paymentService.getPaymentById(paymentId);
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    if (payment.userId !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (payment.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Payment is not pending' });
+    }
+
+    // DEMO ONLY - Simulate PayPal login verification
+    // In production, this would call PayPal OAuth API to verify credentials
+    // For demo, accept any email/password combination
+    console.log(`[PayPal Demo] Simulating login for ${email} (DEMO ONLY)`);
+
+    // Simulate payment approval
+    // In real PayPal flow, user would approve payment on PayPal's site
+    // For demo, we automatically approve after "login"
+    const prisma = require('../../prismaClient');
+    
+    // Update payment with PayPal info and mark as SUCCESS
+    const updatedPayment = await prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: 'SUCCESS',
+        metadata: {
+          paypalEmail: email,
+          maskedEmail: `${email.split('@')[0].slice(0, 2)}***@${email.split('@')[1]}`,
+          approvedAt: new Date().toISOString(),
+          simulated: true,
+        },
+      },
+    });
+
+    // Update order status
+    const orderService = require('../orderService');
+    await orderService.updateOrderStatus(payment.orderId, 'PAID');
+
+    res.json({
+      success: true,
+      payment: {
+        id: updatedPayment.id,
+        status: updatedPayment.status,
+        providerTxId: updatedPayment.providerTxId,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   listPayments,
   getPaymentDetail,
   getPaymentById,
   initPayment,
   chargeCard,
+  chargePayPal,
   exportCSV,
 };
 

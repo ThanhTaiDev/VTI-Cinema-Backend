@@ -18,6 +18,7 @@ router.get('/admin/payments/export/csv', authenticate, requireAdmin, rateLimitPa
 router.post('/payments/init', authenticate, validateInitPayment, rateLimitPayment, paymentController.initPayment);
 router.get('/payments/:id', authenticate, rateLimitPayment, paymentController.getPaymentById);
 router.post('/payments/:id/charge-card', authenticate, rateLimitPayment, paymentController.chargeCard);
+router.post('/payments/:id/charge-paypal', authenticate, rateLimitPayment, paymentController.chargePayPal);
 
 // Admin routes - Refund
 router.post('/admin/payments/:id/refund', authenticate, requireAdmin, validateRefund, rateLimitPayment, refundController.refundFull);

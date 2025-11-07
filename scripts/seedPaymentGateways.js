@@ -123,6 +123,25 @@ async function seedPaymentGateways() {
       maxFee: 50000,
       configJson: JSON.stringify({ description: 'Credit Card payment gateway (DEMO ONLY)' }),
     },
+    {
+      code: 'paypal',
+      name: 'PayPal',
+      enabled: true,
+      locked: false,
+      feeType: 'PERCENT',
+      feePercent: 0.0349, // PayPal standard fee: 3.49% + fixed fee
+      feeFixed: 0, // In real PayPal, there's also a fixed fee per transaction
+      minFee: null,
+      maxFee: null,
+      vatOnFeePercent: 0,
+      methodOverrides: null,
+      rules: null,
+      configJson: JSON.stringify({ 
+        description: 'PayPal payment gateway (DEMO ONLY - DO NOT USE IN PRODUCTION)',
+        clientId: process.env.PAYPAL_CLIENT_ID || '',
+        secretKey: process.env.PAYPAL_SECRET_KEY || '',
+      }),
+    },
   ];
 
   for (const gateway of gateways) {
