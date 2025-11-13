@@ -154,9 +154,10 @@ exports.getRevenueChart = async (days = 30) => {
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
     const dateStr = date.toISOString().split('T')[0];
+    const revenue = revenueByDate[dateStr] || 0;
     result.push({
       date: dateStr,
-      revenue: revenueByDate[dateStr] || 0,
+      revenue: Number.isFinite(revenue) ? revenue : 0,
     });
   }
 
@@ -195,9 +196,10 @@ exports.getTicketsChart = async (days = 30) => {
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
     const dateStr = date.toISOString().split('T')[0];
+    const tickets = ticketsByDate[dateStr] || 0;
     result.push({
       date: dateStr,
-      tickets: ticketsByDate[dateStr] || 0,
+      tickets: Number.isFinite(tickets) ? tickets : 0,
     });
   }
 

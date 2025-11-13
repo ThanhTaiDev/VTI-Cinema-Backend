@@ -64,87 +64,123 @@ exports.getById = async (id) => {
 };
 
 exports.create = async (data) => {
-  const { movieId, cinemaId, room, startTime, endTime, price } = data;
+  const { 
+    movieId, 
+    cinemaId, 
+    room, 
+    roomId, 
+    startTime, 
+    endTime, 
+    price, 
+    basePrice, 
+    audio, 
+    subtitle 
+  } = data;
   
-  if (!movieId || !cinemaId || !room || !startTime || !endTime || !price) {
-    throw new Error('All fields are required');
+  if (!movieId || !cinemaId || !startTime || !endTime) {
+    throw new Error('Missing required fields: movieId, cinemaId, startTime, endTime');
   }
 
-  // Create screening with seats in a transaction
-  const screening = await prisma.$transaction(async (tx) => {
-    const newScreening = await tx.screening.create({
-      data: {
-        movieId,
-        cinemaId,
-        room,
-        startTime: new Date(startTime),
-        endTime: new Date(endTime),
-        price: parseInt(price),
-      },
+  // If roomId provided, validate room exists and belongs to cinema
+  if (roomId) {
+    const room = await prisma.room.findUnique({
+      where: { id: roomId },
     });
-
-    // Create seats (8 rows x 10 columns)
-    const ROWS = 8;
-    const COLS = 10;
-    const seatCreates = [];
-    
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const row = r + 1;
-        const col = c + 1;
-        const code = String.fromCharCode(65 + r) + col; // A1, A2, ..., H10
-        
-        seatCreates.push(
-          tx.seat.create({
-            data: {
-              screeningId: newScreening.id,
-              row,
-              col,
-              code,
-              statuses: {
-                create: {
-                  screeningId: newScreening.id,
-                  status: 'AVAILABLE',
-                },
-              },
-            },
-          })
-        );
-      }
+    if (!room) {
+      throw new Error('Room not found');
     }
-    
-    await Promise.all(seatCreates);
-    console.log(`Created ${ROWS * COLS} seats for screening ${newScreening.id}`);
-    
-    return newScreening;
+    if (room.cinemaId !== cinemaId) {
+      throw new Error('Room does not belong to the selected cinema');
+    }
+  }
+
+  // Create screening
+  const screeningData = {
+    movieId,
+    cinemaId,
+    room: room || 'Room 1', // Keep for backward compatibility
+    roomId: roomId || null,
+    startTime: new Date(startTime),
+    endTime: new Date(endTime),
+    price: price ? parseInt(price) : (basePrice || 90000), // Fallback to basePrice or default
+    basePrice: basePrice ? parseInt(basePrice) : null,
+    audio: audio || null,
+    subtitle: subtitle || null,
+  };
+
+  const screening = await prisma.screening.create({
+    data: screeningData,
   });
   
-  const [movie, cinema] = await Promise.all([
+  // NOTE: Seats are now managed through Room, not created per screening
+  // If roomId is provided, seats already exist in the room
+  // If no roomId, old screenings without room assignment will work but seats need to be created separately
+  
+  const [movie, cinema, roomRef] = await Promise.all([
     prisma.movie.findUnique({ where: { id: movieId } }),
     prisma.cinema.findUnique({ where: { id: cinemaId } }),
+    roomId ? prisma.room.findUnique({ where: { id: roomId } }) : null,
   ]);
   
   return {
     ...screening,
     movie,
     cinema,
+    roomRef,
   };
 };
 
 exports.update = async (id, data) => {
-  const { movieId, cinemaId, room, startTime, endTime, price } = data;
+  const { 
+    movieId, 
+    cinemaId, 
+    room, 
+    roomId, 
+    startTime, 
+    endTime, 
+    price, 
+    basePrice, 
+    audio, 
+    subtitle 
+  } = data;
   
   const updateData = {};
-  if (movieId) updateData.movieId = movieId;
-  if (cinemaId) updateData.cinemaId = cinemaId;
-  if (room) updateData.room = room;
-  if (startTime) updateData.startTime = new Date(startTime);
-  if (endTime) updateData.endTime = new Date(endTime);
-  if (price) updateData.price = parseInt(price);
+  if (movieId !== undefined) updateData.movieId = movieId;
+  if (cinemaId !== undefined) updateData.cinemaId = cinemaId;
+  if (room !== undefined) updateData.room = room;
+  if (roomId !== undefined) {
+    // Validate room if provided
+    if (roomId) {
+      const room = await prisma.room.findUnique({
+        where: { id: roomId },
+      });
+      if (!room) {
+        throw new Error('Room not found');
+      }
+      if (cinemaId && room.cinemaId !== cinemaId) {
+        throw new Error('Room does not belong to the selected cinema');
+      }
+    }
+    updateData.roomId = roomId;
+  }
+  if (startTime !== undefined) updateData.startTime = new Date(startTime);
+  if (endTime !== undefined) updateData.endTime = new Date(endTime);
+  if (price !== undefined) updateData.price = parseInt(price);
+  if (basePrice !== undefined) updateData.basePrice = basePrice ? parseInt(basePrice) : null;
+  if (audio !== undefined) updateData.audio = audio;
+  if (subtitle !== undefined) updateData.subtitle = subtitle;
 
   const screening = await prisma.screening.update({
     where: { id },
     data: updateData,
+    include: {
+      roomRef: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
   });
   
   const [movie, cinema] = await Promise.all([

@@ -39,16 +39,29 @@ exports.createOrder = async (data, userId) => {
   return await prisma.$transaction(async (tx) => {
     // Get screening to verify
     const seatIdsArray = Array.isArray(seatIds) ? seatIds : JSON.parse(seatIds);
-    const firstSeat = await tx.seat.findUnique({
-      where: { id: seatIdsArray[0] },
-      include: { screening: true },
+    
+    // First, get screeningId from SeatStatus (since Seat.screening might be null in new schema)
+    const firstSeatStatus = await tx.seatStatus.findFirst({
+      where: {
+        seatId: seatIdsArray[0],
+        holdToken: holdToken,
+        holdUserId: userId,
+        status: 'HELD',
+      },
+      include: {
+        screening: true,
+      },
     });
 
-    if (!firstSeat) {
-      throw new Error('Seats not found');
+    if (!firstSeatStatus) {
+      throw new Error('Seats not held or hold token invalid');
     }
 
-    const screening = firstSeat.screening;
+    const screening = firstSeatStatus.screening;
+    if (!screening) {
+      throw new Error('Screening not found');
+    }
+
     const screeningId = screening.id;
 
     // Check if screening has already started
@@ -100,8 +113,39 @@ exports.createOrder = async (data, userId) => {
       throw new Error('Hold has expired');
     }
 
-    // Calculate pricing
-    const basePrice = screening.price * validSeatStatuses.length;
+    // Calculate pricing - use basePrice and seatType.priceFactor if available
+    let basePrice = 0;
+    
+    // Get seat details with seatType to calculate individual prices
+    const seatsWithTypes = await Promise.all(
+      validSeatStatuses.map(async (ss) => {
+        const seat = await tx.seat.findUnique({
+          where: { id: ss.seatId },
+          include: {
+            seatType: {
+              select: {
+                priceFactor: true,
+              },
+            },
+          },
+        });
+        return { seatStatus: ss, seat };
+      })
+    );
+
+    // Calculate price for each seat
+    const seatPrices = seatsWithTypes.map(({ seatStatus, seat }) => {
+      if (screening.basePrice && seat?.seatType?.priceFactor) {
+        // New pricing: basePrice * priceFactor
+        return Math.round(screening.basePrice * seat.seatType.priceFactor);
+      } else {
+        // Legacy pricing: use screening.price
+        return screening.price || 0;
+      }
+    });
+
+    basePrice = seatPrices.reduce((sum, price) => sum + price, 0);
+    
     let discount = 0;
     let voucherDiscount = 0;
 
@@ -172,7 +216,20 @@ exports.createOrder = async (data, userId) => {
     const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
     const tickets = await Promise.all(
       validSeatStatuses.map(async (seatStatus, index) => {
-        const seat = seatStatus.seat;
+        // Get seat details to ensure we have row and col
+        const seat = await tx.seat.findUnique({
+          where: { id: seatStatus.seatId },
+          select: {
+            id: true,
+            row: true,
+            col: true,
+          },
+        });
+
+        if (!seat) {
+          throw new Error(`Seat ${seatStatus.seatId} not found`);
+        }
+
         const individualTicketCode = `${ticketCode}-${index + 1}`;
         const pricePerTicket = Math.round(totalAmount / validSeatStatuses.length);
         
@@ -181,7 +238,7 @@ exports.createOrder = async (data, userId) => {
             orderId: order.id,
             screeningId: order.screeningId,
             seatId: seat.id,
-            seatRow: seat.row,
+            seatRow: seat.row || null, // Ensure it's String or null
             seatCol: seat.col,
             userId: order.userId,
             status: 'PENDING',

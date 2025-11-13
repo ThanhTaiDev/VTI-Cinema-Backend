@@ -1,392 +1,464 @@
-const prisma = require('../prismaClient');
-const crypto = require('crypto');
-const { redlock } = require('../infra/redisClient');
-
-const HOLD_DURATION_SECONDS = 600; // 10 minutes
+const prisma = require('../prismaClient')
 
 /**
- * Get seat map for a screening
+ * Seat Service - Manage seats in rooms
+ */
+
+/**
+ * Get seats for a room (seat map)
+ */
+exports.getSeatsByRoom = async (roomId) => {
+  const room = await prisma.room.findUnique({
+    where: { id: roomId },
+    include: {
+      seats: {
+        include: {
+          seatType: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              priceFactor: true,
+              color: true,
+            },
+          },
+        },
+        orderBy: [
+          { row: 'asc' },
+          { col: 'asc' },
+        ],
+      },
+    },
+  })
+
+  if (!room) {
+    throw new Error('Room not found')
+  }
+
+  return room.seats
+}
+
+/**
+ * Get seat map for a screening (legacy format for backward compatibility)
+ * Returns format: { seats: { [seatId]: { ... } } }
  */
 exports.getSeatMap = async (screeningId) => {
+  try {
+    // Use the new getSeatsByScreening function
+    const seats = await exports.getSeatsByScreening(screeningId)
+    
+    // Convert to legacy format: { seats: { [seatId]: seatData } }
+    const seatsMap = {}
+    seats.forEach(seat => {
+      const seatId = seat.seatId || seat.code
+      seatsMap[seatId] = {
+        id: seat.seatId,
+        code: seat.code,
+        row: seat.row,
+        col: seat.col,
+        status: seat.status,
+        price: seat.price,
+        seatType: seat.seatType,
+      }
+    })
+    
+    return { seats: seatsMap }
+  } catch (err) {
+    // If error, return empty map instead of throwing
+    console.error('[SeatService] Error in getSeatMap:', err)
+    return { seats: {} }
+  }
+}
+
+/**
+ * Get seats for a screening (with availability status)
+ */
+exports.getSeatsByScreening = async (screeningId) => {
   const screening = await prisma.screening.findUnique({
     where: { id: screeningId },
-  });
-
-  if (!screening) {
-    throw new Error('Screening not found');
-  }
-
-  // Fetch related movie and cinema separately (no relation defined in schema)
-  const [movie, cinema] = await Promise.all([
-    prisma.movie.findUnique({ where: { id: screening.movieId } }),
-    prisma.cinema.findUnique({ where: { id: screening.cinemaId } }),
-  ]);
-
-  // Add movie and cinema to screening object
-  screening.movie = movie;
-  screening.cinema = cinema;
-
-  // Check if Seat model exists in Prisma Client
-  if (!prisma.seat) {
-    console.error('Prisma Seat model not available. Please run: npx prisma generate');
-    // Return empty seat map so frontend can still display screening info
-    return {
-      screening,
-      seats: {},
-      serverTime: new Date().toISOString(),
-      holdDurationSecs: HOLD_DURATION_SECONDS,
-    };
-  }
-
-  // Get all seats for this screening (static seat map)
-  let seats = [];
-  try {
-    seats = await prisma.seat.findMany({
-      where: { screeningId },
-      orderBy: [{ row: 'asc' }, { col: 'asc' }],
-      include: {
-        statuses: {
-          orderBy: { createdAt: 'desc' },
-          take: 1, // Get latest status
-        },
-      },
-    });
-  } catch (error) {
-    // If table doesn't exist, return empty seat map
-    if (error.message && error.message.includes('no such table')) {
-      console.warn('Seat table does not exist. Please run migration: npx prisma migrate dev');
-      return {
-        screening,
-        seats: {},
-        serverTime: new Date().toISOString(),
-        holdDurationSecs: HOLD_DURATION_SECONDS,
-      };
-    }
-    throw error;
-  }
-
-  // If no seats exist, create default seat layout (8 rows x 10 columns)
-  if (seats.length === 0) {
-    console.warn(`No seats found for screening ${screeningId}. Creating default seat layout...`);
-    
-    try {
-      const ROWS = 8;
-      const COLS = 10;
-      const newSeats = [];
-      
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const row = r + 1;
-          const col = c + 1;
-          const code = String.fromCharCode(65 + r) + col; // A1, A2, ..., H10
-          
-          const seat = await prisma.seat.create({
-            data: {
-              screeningId,
-              row,
-              col,
-              code,
-              statuses: {
-                create: {
-                  screeningId,
-                  status: 'AVAILABLE',
+    include: {
+      roomRef: {
+        include: {
+          seats: {
+            include: {
+              seatType: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  priceFactor: true,
+                  color: true,
                 },
               },
             },
+            orderBy: [
+              { row: 'asc' },
+              { col: 'asc' },
+            ],
+          },
+        },
+      },
+      cinema: {
+        include: {
+          rooms: {
             include: {
-              statuses: {
-                orderBy: { createdAt: 'desc' },
-                take: 1,
+              seats: {
+                include: {
+                  seatType: {
+                    select: {
+                      id: true,
+                      code: true,
+                      name: true,
+                      priceFactor: true,
+                      color: true,
+                    },
+                  },
+                },
+                orderBy: [
+                  { row: 'asc' },
+                  { col: 'asc' },
+                ],
               },
             },
-          });
-          newSeats.push(seat);
-        }
-      }
-      
-      seats = newSeats;
-      console.log(`Created ${newSeats.length} seats for screening ${screeningId}`);
-    } catch (error) {
-      console.error('Error creating seats:', error);
-      // Return empty map if creation fails
-      return {
-        screening,
-        seats: {},
-        serverTime: new Date().toISOString(),
-        holdDurationSecs: HOLD_DURATION_SECONDS,
-      };
+          },
+        },
+      },
+      seatStatuses: {
+        select: {
+          seatId: true,
+          status: true,
+          orderId: true,
+        },
+      },
+    },
+  })
+
+  if (!screening) {
+    throw new Error('Screening not found')
+  }
+
+  // If screening has roomId, use that room
+  let targetRoom = screening.roomRef
+
+  // If no roomId, try to find a room by matching the legacy "room" field (room name)
+  if (!targetRoom && screening.room) {
+    const matchingRoom = screening.cinema?.rooms?.find(
+      r => r.name.toLowerCase() === screening.room.toLowerCase()
+    )
+    if (matchingRoom) {
+      targetRoom = matchingRoom
+      // Auto-assign roomId to screening for future use
+      await prisma.screening.update({
+        where: { id: screeningId },
+        data: { roomId: matchingRoom.id },
+      }).catch(err => {
+        console.warn('[SeatService] Could not auto-assign roomId:', err)
+      })
     }
   }
 
-  // Create seat map structure using latest SeatStatus
-  const seatMap = {};
-  seats.forEach(seat => {
-    const latestStatus = seat.statuses && seat.statuses.length > 0 ? seat.statuses[0] : null;
-    // Generate code if not exists: A1, B2, etc.
-    const code = seat.code || `${String.fromCharCode(64 + seat.row)}${seat.col}`;
-    const key = code;
-    
-    seatMap[key] = {
-      id: seat.id,
-      seatId: seat.id,
-      row: seat.row,
-      col: seat.col,
-      code: code, // Always include code for display
-      status: latestStatus ? latestStatus.status : 'AVAILABLE',
-      holdExpiresAt: latestStatus?.holdUntil || null,
-    };
-  });
+  // If still no room, use the first available room in the cinema
+  if (!targetRoom && screening.cinema?.rooms?.length > 0) {
+    targetRoom = screening.cinema.rooms[0]
+    // Auto-assign roomId to screening for future use
+    await prisma.screening.update({
+      where: { id: screeningId },
+      data: { roomId: targetRoom.id },
+    }).catch(err => {
+      console.warn('[SeatService] Could not auto-assign roomId:', err)
+    })
+  }
 
-  return {
-    screening,
-    seats: seatMap,
-    serverTime: new Date().toISOString(),
-    holdDurationSecs: HOLD_DURATION_SECONDS,
-  };
-};
+  if (!targetRoom) {
+    throw new Error('Screening has no room assigned and no rooms available in cinema')
+  }
+
+  // Map seat statuses
+  const statusMap = {}
+  screening.seatStatuses.forEach(ss => {
+    statusMap[ss.seatId] = ss.status
+  })
+
+  // Return seats with status
+  return targetRoom.seats.map(seat => ({
+    seatId: seat.id,
+    code: seat.code,
+    row: seat.row,
+    col: seat.col,
+    seatType: seat.seatType,
+    status: statusMap[seat.id] || 'AVAILABLE',
+    price: screening.basePrice
+      ? Math.round(screening.basePrice * seat.seatType.priceFactor)
+      : screening.price || 0,
+  }))
+}
 
 /**
- * Hold seats for a user
- * Uses database transaction to ensure atomicity
+ * Create/Update seats in bulk for a room
+ */
+exports.saveSeats = async (roomId, seatsData) => {
+  const room = await prisma.room.findUnique({
+    where: { id: roomId },
+  })
+
+  if (!room) {
+    throw new Error('Room not found')
+  }
+
+  // Get default seat type (STANDARD)
+  const defaultSeatType = await prisma.seatType.findUnique({
+    where: { code: 'STANDARD' },
+  })
+
+  if (!defaultSeatType) {
+    throw new Error('Default seat type (STANDARD) not found. Please run seed script.')
+  }
+
+  // Get unavailable seat type
+  const unavailableSeatType = await prisma.seatType.findUnique({
+    where: { code: 'UNAVAILABLE' },
+  })
+
+  // Process seats
+  const seatsToUpsert = []
+  for (const seatData of seatsData) {
+    const { code, row, col, seatType: seatTypeCode, status = 'available' } = seatData
+
+    // Extract seatType code (handle both string and object)
+    let seatTypeCodeStr = seatTypeCode
+    if (typeof seatTypeCode === 'object' && seatTypeCode !== null) {
+      seatTypeCodeStr = seatTypeCode.code || seatTypeCode
+    }
+
+    // Find seat type
+    let seatType = defaultSeatType
+    if (seatTypeCodeStr) {
+      const found = await prisma.seatType.findUnique({
+        where: { code: String(seatTypeCodeStr) },
+      })
+      if (found) {
+        seatType = found
+      }
+    }
+
+    // If status is 'disabled' or seatType is UNAVAILABLE, use unavailable type
+    if (status === 'disabled' || seatTypeCodeStr === 'UNAVAILABLE') {
+      seatType = unavailableSeatType || defaultSeatType
+    }
+
+    seatsToUpsert.push({
+      roomId,
+      code,
+      row: String(row),
+      col: parseInt(col),
+      seatTypeId: seatType.id,
+      status,
+    })
+  }
+
+  // Use transaction to upsert all seats
+  const results = await prisma.$transaction(async (tx) => {
+    const seatResults = []
+    for (const seatData of seatsToUpsert) {
+      // Try to find existing seat
+      const existing = await tx.seat.findFirst({
+        where: {
+          roomId: seatData.roomId,
+          row: seatData.row,
+          col: seatData.col,
+        },
+      })
+
+      if (existing) {
+        // Update existing seat
+        const updated = await tx.seat.update({
+          where: { id: existing.id },
+          data: {
+            code: seatData.code,
+            seatTypeId: seatData.seatTypeId,
+            status: seatData.status,
+          },
+        })
+        seatResults.push(updated)
+      } else {
+        // Create new seat
+        const created = await tx.seat.create({
+          data: seatData,
+        })
+        seatResults.push(created)
+      }
+    }
+    return seatResults
+  })
+
+  return {
+    success: true,
+    count: results.length,
+  }
+}
+
+/**
+ * Delete all seats for a room (when resetting layout)
+ */
+exports.deleteSeatsByRoom = async (roomId) => {
+  await prisma.seat.deleteMany({
+    where: { roomId },
+  })
+
+  return { success: true }
+}
+
+/**
+ * Get seat statuses for a screening
+ */
+exports.getSeatStatuses = async (screeningId) => {
+  const statuses = await prisma.seatStatus.findMany({
+    where: {
+      screeningId,
+    },
+    select: {
+      seatId: true,
+      status: true,
+      orderId: true,
+      holdUntil: true,
+    },
+  })
+
+  return statuses
+}
+
+/**
+ * Hold seats for a screening (create SeatStatus records with HELD status)
  */
 exports.holdSeats = async (screeningId, seatIds, userId) => {
-  if (!seatIds || !Array.isArray(seatIds) || seatIds.length === 0) {
-    throw new Error('Seat IDs are required');
+  if (!screeningId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0) {
+    throw new Error('Missing required fields: screeningId, seatIds')
+  }
+
+  if (!userId) {
+    throw new Error('User ID is required')
+  }
+
+  // Verify screening exists
+  const screening = await prisma.screening.findUnique({
+    where: { id: screeningId },
+  })
+
+  if (!screening) {
+    throw new Error('Screening not found')
   }
 
   // Generate hold token
-  const holdToken = crypto.randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + HOLD_DURATION_SECONDS * 1000);
+  const crypto = require('crypto')
+  const holdToken = crypto.randomBytes(32).toString('hex')
+  const holdUntil = new Date(Date.now() + 600000) // 10 minutes
 
-  // Create lock key for these specific seats
-  const lockKey = `lock:showtime:${screeningId}:seat:${seatIds.sort().join(',')}`;
-  let lock = null;
-
-  try {
-    // Try to acquire distributed lock if Redis is available
-    if (redlock) {
-      try {
-        lock = await redlock.acquire([lockKey], 5000);
-      } catch (lockError) {
-        console.warn('[Redis] Failed to acquire lock, using DB transaction only:', lockError.message);
-        // Continue without lock - DB transaction will handle concurrency
-      }
-    }
-    
-    // Use transaction to ensure atomicity
-    return await prisma.$transaction(async (tx) => {
-    // Check if screening exists
-    const screening = await tx.screening.findUnique({
-      where: { id: screeningId },
-    });
-
-    if (!screening) {
-      throw new Error('Screening not found');
-    }
-
-    // Check if screening is in the past
-    if (new Date(screening.startTime) < new Date()) {
-      throw new Error('Screening has already started');
-    }
-
-    // Verify all seats exist
-    const seats = await tx.seat.findMany({
+  // Use transaction to ensure atomicity
+  return await prisma.$transaction(async (tx) => {
+    // Check if any seats are already HELD or SOLD
+    const existingStatuses = await tx.seatStatus.findMany({
       where: {
-        id: { in: seatIds },
         screeningId,
+        seatId: { in: seatIds },
+        status: { in: ['HELD', 'SOLD'] },
       },
-    });
+    })
 
-    if (seats.length !== seatIds.length) {
-      throw new Error('Some seats not found');
+    if (existingStatuses.length > 0) {
+      const error = new Error('Some seats are already taken')
+      error.status = 409 // Conflict
+      error.conflictedSeats = existingStatuses.map(ss => ss.seatId)
+      throw error
     }
 
-    // Get latest seat statuses to check for conflicts
+    // Create or update SeatStatus records
     const seatStatuses = await Promise.all(
-      seats.map(async (seat) => {
-        const latestStatus = await tx.seatStatus.findFirst({
+      seatIds.map(async (seatId) => {
+        // Check if seat exists
+        const seat = await tx.seat.findUnique({
+          where: { id: seatId },
+        })
+
+        if (!seat) {
+          throw new Error(`Seat ${seatId} not found`)
+        }
+
+        // Find existing SeatStatus for this seat and screening
+        const existing = await tx.seatStatus.findFirst({
           where: {
-            seatId: seat.id,
+            seatId,
             screeningId,
           },
           orderBy: { createdAt: 'desc' },
-        });
-        return { seat, latestStatus };
-      })
-    );
-
-    // Check for conflicts - seats that are HELD or SOLD
-    const conflictedSeats = seatStatuses.filter(({ latestStatus }) => 
-      latestStatus && (latestStatus.status === 'HELD' || latestStatus.status === 'SOLD')
-    );
-
-    if (conflictedSeats.length > 0) {
-      const error = new Error('Some seats are already taken');
-      error.status = 409; // Conflict
-      error.conflictedSeats = conflictedSeats.map(({ seat }) => seat.code || `${String.fromCharCode(64 + seat.row)}${seat.col}`);
-      throw error;
-    }
-
-    // Create new SeatStatus records with HELD status (allows multiple statuses over time)
-    await Promise.all(
-      seatStatuses.map(({ seat }) =>
-        tx.seatStatus.create({
-          data: {
-            seatId: seat.id,
-            screeningId,
-            status: 'HELD',
-            holdToken,
-            holdUserId: userId,
-            holdUntil: expiresAt,
-          },
         })
-      )
-    );
 
-    // Calculate pricing breakdown
-    const basePrice = screening.price * seats.length;
-    const pricingBreakdown = {
-      basePrice,
-      discount: 0,
-      voucherDiscount: 0,
-      total: basePrice,
-    };
-
-      return {
-        holdToken,
-        expiresAt: expiresAt.toISOString(),
-        pricingBreakdown,
-      };
-    }, {
-      timeout: 10000, // 10 second timeout
-    });
-  } catch (error) {
-    // Re-throw error to be handled by caller
-    throw error;
-  } finally {
-    // Release lock after transaction completes
-    if (lock && redlock) {
-      try {
-        await lock.release();
-      } catch (releaseError) {
-        console.error('[Redis] Error releasing lock:', releaseError.message);
-      }
-    }
-  }
-};
-
-/**
- * Release expired holds
- * Called by cleanup job
- */
-exports.releaseExpiredHolds = async () => {
-  if (!prisma || !prisma.seatStatus) {
-    // Return silently - warning will be logged by cleanup job
-    return { released: 0 };
-  }
-
-  const now = new Date();
-  
-  // Find expired HELD seat statuses
-  const expiredSeatStatuses = await prisma.seatStatus.findMany({
-    where: {
-      status: 'HELD',
-      holdUntil: {
-        lte: now,
-      },
-    },
-    include: {
-      seat: true,
-    },
-  });
-
-  if (expiredSeatStatuses.length === 0) {
-    return { released: 0 };
-  }
-
-  // Check each expired hold to see if it's still the latest status for that seat
-  // Only release if the latest status is still HELD (not SOLD)
-  const seatsToRelease = [];
-  for (const expiredStatus of expiredSeatStatuses) {
-    // Get latest status for this seat
-    const latestStatus = await prisma.seatStatus.findFirst({
-      where: {
-        seatId: expiredStatus.seatId,
-        screeningId: expiredStatus.screeningId,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // Only release if latest status is still HELD and matches this expired status
-    // This prevents releasing holds that have already been converted to SOLD
-    if (latestStatus && latestStatus.id === expiredStatus.id && latestStatus.status === 'HELD') {
-      seatsToRelease.push(expiredStatus);
-    }
-  }
-
-  if (seatsToRelease.length === 0) {
-    return { released: 0 };
-  }
-
-  // Get unique order IDs
-  const orderIds = [...new Set(seatsToRelease.map(ss => ss.orderId).filter(Boolean))];
-
-  // Update expired orders
-  if (orderIds.length > 0) {
-    await prisma.order.updateMany({
-      where: {
-        id: { in: orderIds },
-        status: 'PENDING',
-      },
-      data: {
-        status: 'EXPIRED',
-      },
-    });
-  }
-
-  // Create new SeatStatus records with AVAILABLE status to release holds
-  await Promise.all(
-    seatsToRelease.map(ss =>
-      prisma.seatStatus.create({
-        data: {
-          seatId: ss.seatId,
-          screeningId: ss.screeningId,
-          status: 'AVAILABLE',
-        },
+        if (existing) {
+          // Update existing status to HELD
+          return await tx.seatStatus.update({
+            where: { id: existing.id },
+            data: {
+              status: 'HELD',
+              holdToken,
+              holdUserId: userId,
+              holdUntil,
+            },
+          })
+        } else {
+          // Create new SeatStatus
+          return await tx.seatStatus.create({
+            data: {
+              seatId,
+              screeningId,
+              status: 'HELD',
+              holdToken,
+              holdUserId: userId,
+              holdUntil,
+            },
+          })
+        }
       })
     )
-  );
 
-  return {
-    released: seatsToRelease.length,
-    seatStatusIds: seatsToRelease.map(ss => ss.id),
-  };
-};
+    return {
+      holdToken,
+      holdUntil,
+      seatStatuses: seatStatuses.map(ss => ({
+        seatId: ss.seatId,
+        status: ss.status,
+      })),
+    }
+  })
+}
 
 /**
- * Get seat status for real-time updates
+ * Release expired seat holds
+ * Updates SeatStatus records with status='HELD' and holdUntil < now to 'AVAILABLE'
  */
-exports.getSeatStatuses = async (screeningId) => {
-  const seats = await prisma.seat.findMany({
-    where: { screeningId },
-    orderBy: [{ row: 'asc' }, { col: 'asc' }],
-    include: {
-      statuses: {
-        orderBy: { createdAt: 'desc' },
-        take: 1, // Get latest status
+exports.releaseExpiredHolds = async () => {
+  try {
+    const now = new Date()
+
+    // Update expired holds to AVAILABLE directly
+    const updateResult = await prisma.seatStatus.updateMany({
+      where: {
+        status: 'HELD',
+        holdUntil: {
+          lt: now, // Less than now = expired
+        },
       },
-    },
-  });
+      data: {
+        status: 'AVAILABLE',
+        holdToken: null,
+        holdUserId: null,
+        holdUntil: null,
+      },
+    })
 
-  return seats.map(seat => {
-    const latestStatus = seat.statuses && seat.statuses.length > 0 ? seat.statuses[0] : null;
     return {
-      id: seat.id,
-      key: seat.code || `${String.fromCharCode(64 + seat.row)}${seat.col}`,
-      status: latestStatus ? latestStatus.status : 'AVAILABLE',
-      holdUntil: latestStatus?.holdUntil || null,
-      seatId: seat.id,
-    };
-  });
-};
-
+      released: updateResult.count,
+    }
+  } catch (error) {
+    console.error('[SeatService] Error releasing expired holds:', error)
+    throw error
+  }
+}

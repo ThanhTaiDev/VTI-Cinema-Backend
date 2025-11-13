@@ -801,12 +801,73 @@ async function seedScreeningsAndSeats() {
   const cinemas = await prisma.cinema.findMany({ orderBy: { id: 'asc' } });
   const movies = await prisma.movie.findMany({ orderBy: { id: 'asc' } });
 
+  // Get default STANDARD seat type
+  const standardSeatType = await prisma.seatType.findUnique({
+    where: { code: 'STANDARD' },
+  });
+  
+  if (!standardSeatType) {
+    throw new Error('STANDARD seat type not found. Please run seedSeatTypes.js first.');
+  }
+
+  // Create rooms for each cinema (5 rooms per cinema) + seats
+  const roomMap = new Map(); // cinemaId -> rooms array
+  for (const cinema of cinemas) {
+    const rooms = [];
+    for (let roomNum = 1; roomNum <= 5; roomNum++) {
+      const room = await prisma.room.create({
+        data: {
+          cinemaId: cinema.id,
+          name: `Phòng ${roomNum}`,
+          rows: ROWS,
+          cols: COLS,
+        },
+      });
+      
+      // Create seats for this room (once per room)
+      const seatCreates = [];
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const rowLetter = String.fromCharCode(65 + r); // A, B, C...
+          const row = rowLetter; // String format
+          const col = c + 1;
+          const code = rowLetter + col; // A1..H10
+
+          seatCreates.push(
+            prisma.seat.create({
+              data: {
+                roomId: room.id,
+                seatTypeId: standardSeatType.id,
+                row,
+                col,
+                code,
+                status: 'available',
+              },
+            })
+          );
+        }
+      }
+      
+      // Create seats in batches
+      const CONCURRENCY = 20;
+      for (let k = 0; k < seatCreates.length; k += CONCURRENCY) {
+        await Promise.all(seatCreates.slice(k, k + CONCURRENCY));
+      }
+      
+      rooms.push(room);
+    }
+    roomMap.set(cinema.id, rooms);
+  }
+
   const today = new Date();
 
   for (const movie of movies) {
     // tạo 5 suất chiếu cho mỗi phim, xoay vòng rạp
     for (let i = 0; i < 5; i++) {
       const cinema = cinemas[i % cinemas.length];
+      const cinemaRooms = roomMap.get(cinema.id);
+      const room = cinemaRooms[i % cinemaRooms.length];
+      
       const startTime = addDaysAtHour(today, i + 1, screeningTimes[i]);
       const endTime = new Date(startTime);
       endTime.setMinutes(endTime.getMinutes() + (movie.duration || 120));
@@ -815,43 +876,38 @@ async function seedScreeningsAndSeats() {
         data: {
           movieId: movie.id,
           cinemaId: cinema.id,
-          room: `Phòng ${((i % 5) + 1)}`, // 1..5
+          room: room.name, // Keep for backward compatibility
+          roomId: room.id, // NEW: Link to Room
           startTime,
           endTime,
           price: 80000 + Math.floor(Math.random() * 20000),
+          basePrice: 80000 + Math.floor(Math.random() * 20000), // NEW
         },
       });
 
-      // Tạo ghế + trạng thái
-      const seatCreates = [];
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const row = r + 1;
-          const col = c + 1;
-          const code = String.fromCharCode(65 + r) + col; // A1..H10
+      // Create SeatStatus for all seats in this room for this screening
+      // Seats already exist in Room, we just need to create SeatStatus records
+      const roomSeats = await prisma.seat.findMany({
+        where: { roomId: room.id },
+      });
 
-          seatCreates.push(
-            prisma.seat.create({
-              data: {
-                screeningId: screening.id,
-                row,
-                col,
-                code,
-                statuses: {
-                  create: {
-                    screeningId: screening.id,
-                    status: 'AVAILABLE',
-                  },
-                },
-              },
-            })
-          );
-        }
+      const seatStatusCreates = [];
+      for (const seat of roomSeats) {
+        seatStatusCreates.push(
+          prisma.seatStatus.create({
+            data: {
+              seatId: seat.id,
+              screeningId: screening.id,
+              status: 'AVAILABLE',
+            },
+          })
+        );
       }
-      // Giới hạn concurrency để tránh quá tải kết nối DB
+
+      // Create seat statuses in batches
       const CONCURRENCY = 20;
-      for (let k = 0; k < seatCreates.length; k += CONCURRENCY) {
-        await Promise.all(seatCreates.slice(k, k + CONCURRENCY));
+      for (let k = 0; k < seatStatusCreates.length; k += CONCURRENCY) {
+        await Promise.all(seatStatusCreates.slice(k, k + CONCURRENCY));
       }
 
       console.log(

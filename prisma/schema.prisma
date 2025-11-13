@@ -6,35 +6,36 @@ datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
- 
+
 model User {
-  id          String    @id @default(cuid())
-  uid         String    @unique @default(uuid())
-  name        String
-  email       String    @unique
-  phone       String?
-  password    String
-  role        String    @default("USER") // Keep for backward compatibility
-  status      String    @default("ACTIVE")
-  dateOfBirth DateTime?
-  gender      String?
-  createdAt   DateTime  @default(now())
-  tickets     Ticket[]
-  reviews     Review[]
-  userRoles   UserRole[] // New: RBAC relation
+  id              String          @id @default(cuid())
+  uid             String          @unique @default(uuid())
+  name            String
+  email           String          @unique
+  phone           String?
+  password        String
+  role            String          @default("USER") // Keep for backward compatibility
+  status          String          @default("ACTIVE")
+  dateOfBirth     DateTime?
+  gender          String?
+  createdAt       DateTime        @default(now())
+  tickets         Ticket[]
+  reviews         Review[]
+  userRoles       UserRole[] // New: RBAC relation
   adminActivities AdminActivity[] // Admin activity log
 }
 
 model Cinema {
-  id        String @id @default(cuid())
-  name      String
-  region    String
-  address   String
-  latitude  Float?
-  longitude Float?
-  logoUrl   String?
-  phone     String?
+  id         String      @id @default(cuid())
+  name       String
+  region     String
+  address    String
+  latitude   Float?
+  longitude  Float?
+  logoUrl    String?
+  phone      String?
   screenings Screening[]
+  rooms      Room[]
 }
 
 enum MovieStatus {
@@ -44,54 +45,60 @@ enum MovieStatus {
 }
 
 model Movie {
-  id           String      @id @default(cuid())
-  title        String
-  slug         String?     @unique
-  actors       String?
-  director     String?
-  duration     Int
-  genres       String?
-  countries    String?
-  releaseDate  DateTime?
-  rating       Float?
-  ageRating    String?     // T13, T16, T18, etc.
-  description  String?
-  summary      String?
-  posterUrl    String?
-  backdropUrl  String?
-  trailerUrl   String?
-  formats      String?     // JSON array: ["2D", "3D", "IMAX"]
-  cast         String?     // JSON array of cast members
-  status       MovieStatus @default(COMING_SOON)
-  isPreSale    Boolean     @default(false)
-  isFeatured   Boolean     @default(false)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  screenings   Screening[]
-  
+  id          String      @id @default(cuid())
+  title       String
+  slug        String?     @unique
+  actors      String?
+  director    String?
+  duration    Int
+  genres      String?
+  countries   String?
+  releaseDate DateTime?
+  rating      Float?
+  ageRating   String? // T13, T16, T18, etc.
+  description String?
+  summary     String?
+  posterUrl   String?
+  backdropUrl String?
+  trailerUrl  String?
+  formats     String? // JSON array: ["2D", "3D", "IMAX"]
+  cast        String? // JSON array of cast members
+  status      MovieStatus @default(COMING_SOON)
+  isPreSale   Boolean     @default(false)
+  isFeatured  Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  screenings  Screening[]
+
   @@index([status])
   @@index([releaseDate])
   @@index([isFeatured])
 }
 
 model Screening {
-  id        String   @id @default(cuid())
-  movieId   String
-  cinemaId  String
-  room      String
-  startTime DateTime
-  endTime   DateTime
-  price     Int
-  movie     Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
-  cinema    Cinema   @relation(fields: [cinemaId], references: [id], onDelete: Cascade)
-  seats     Seat[]
+  id           String       @id @default(cuid())
+  movieId      String
+  cinemaId     String
+  room         String // Keep for backward compatibility
+  roomId       String? // NEW: Link to Room model
+  startTime    DateTime
+  endTime      DateTime
+  price        Int // Keep for backward compatibility
+  basePrice    Int? // NEW: Base price for this screening
+  audio        String? // NEW: 'original', 'dubbing'
+  subtitle     String? // NEW: 'vn', 'en', 'none'
+  movie        Movie        @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  cinema       Cinema       @relation(fields: [cinemaId], references: [id], onDelete: Cascade)
+  roomRef      Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  seats        Seat[]
   seatStatuses SeatStatus[]
-  orders    Order[]
-  tickets   Ticket[]
-  
+  orders       Order[]
+  tickets      Ticket[]
+
   @@index([movieId])
   @@index([cinemaId])
   @@index([startTime])
+  @@index([roomId])
 }
 
 model Review {
@@ -111,19 +118,55 @@ enum SeatState {
   SOLD
 }
 
+model SeatType {
+  id          String   @id @default(cuid())
+  code        String   @unique // 'STANDARD', 'VIP', 'COUPLE', 'UNAVAILABLE'
+  name        String // Display name: 'Ghế thường', 'Ghế VIP', etc.
+  priceFactor Float    @default(1.0) // Multiplier for base price (e.g. 1.0, 1.5, 2.0)
+  color       String? // UI color: '#9333EA', '#EF4444', etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  seats       Seat[]
+
+  @@index([code])
+}
+
+model Room {
+  id         String      @id @default(cuid())
+  cinemaId   String
+  name       String
+  rows       Int
+  cols       Int
+  seatLayout Json? // Optional: saved layout matrix / metadata
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  cinema     Cinema      @relation(fields: [cinemaId], references: [id], onDelete: Cascade)
+  seats      Seat[]
+  screenings Screening[]
+
+  @@index([cinemaId])
+}
+
 model Seat {
-  id          String    @id @default(cuid())
-  screeningId String
-  row         Int
+  id          String       @id @default(cuid())
+  screeningId String? // Keep for backward compatibility (nullable)
+  roomId      String? // NEW: Link to Room (nullable for migration safety)
+  seatTypeId  String? // NEW: Link to SeatType (nullable for migration safety)
+  row         String? // Changed from Int to String: 'A', 'B', 'C'... (nullable for migration)
   col         Int
-  code        String    // "A1", "D6", ...
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  screening   Screening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  code        String // "A1", "D6", ...
+  status      String       @default("available") // 'available', 'disabled' (for admin)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  screening   Screening?   @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  room        Room?        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  seatType    SeatType?    @relation(fields: [seatTypeId], references: [id], onDelete: Restrict)
   statuses    SeatStatus[]
 
-  @@unique([screeningId, row, col])
+  @@unique([roomId, row, col])
   @@index([screeningId])
+  @@index([roomId])
+  @@index([seatTypeId])
 }
 
 model SeatStatus {
@@ -139,7 +182,7 @@ model SeatStatus {
   seat        Seat      @relation(fields: [seatId], references: [id], onDelete: Cascade)
   screening   Screening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
   order       Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  
+
   @@index([screeningId, seatId])
   @@index([screeningId, status])
   @@index([holdToken])
@@ -147,24 +190,24 @@ model SeatStatus {
 }
 
 model Order {
-  id              String    @id @default(cuid())
-  userId          String
-  screeningId     String
-  holdToken       String    @unique
-  status          String    @default("PENDING")
-  seatIds         String
+  id               String       @id @default(cuid())
+  userId           String
+  screeningId      String
+  holdToken        String       @unique
+  status           String       @default("PENDING")
+  seatIds          String
   pricingBreakdown String?
-  totalAmount     Int
-  voucherCode     String?
-  idempotencyKey  String?   @unique
-  qrCode          String?   @unique
-  expiresAt       DateTime
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  screening       Screening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
-  seatStatuses    SeatStatus[]
-  payments        Payment[]
-  tickets         Ticket[]
+  totalAmount      Int
+  voucherCode      String?
+  idempotencyKey   String?      @unique
+  qrCode           String?      @unique
+  expiresAt        DateTime
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  screening        Screening    @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  seatStatuses     SeatStatus[]
+  payments         Payment[]
+  tickets          Ticket[]
 
   @@index([userId])
   @@index([holdToken])
@@ -173,51 +216,51 @@ model Order {
 }
 
 model Ticket {
-  id         String    @id @default(cuid())
-  code       String    @unique @default(uuid())
-  orderId    String
+  id          String     @id @default(cuid())
+  code        String     @unique @default(uuid())
+  orderId     String
   screeningId String
-  seatId     String
-  seatRow    Int
-  seatCol    Int
-  userId     String
-  status     String    @default("PENDING")
-  price      Int
-  qrCode     String?
-  checkInAt  DateTime?
-  createdAt  DateTime  @default(now())
-  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  screening  Screening? @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  seatId      String
+  seatRow     String?    // Changed from Int to String? to support 'A', 'B', 'C'... (nullable for backward compatibility)
+  seatCol     Int
+  userId      String
+  status      String     @default("PENDING")
+  price       Int
+  qrCode      String?
+  checkInAt   DateTime?
+  createdAt   DateTime   @default(now())
+  order       Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  screening   Screening? @relation(fields: [screeningId], references: [id], onDelete: Cascade)
 }
 
 model Payment {
-  id               String   @id @default(cuid())
-  orderId          String
-  userId           String?
-  gateway          String   @default("mock") // 'mock', 'momo', 'vnpay', ...
-  method           String?   // 'qrcode', 'app', 'card', ...
-  amount           Int
-  fee              Int      @default(0)
-  net              Int      @default(0) // New field, can be calculated from amount - fee
-  netAmount        Int?     // Keep old field for backward compatibility
-  currency         String   @default("VND")
-  status           String   // 'PENDING'|'SUCCESS'|'FAILED'|'CANCELED'|'REFUNDED'|'PARTIAL_REFUNDED'
-  providerTxId     String?  // transaction id từ cổng
-  providerOrderId  String?  // order ref ở provider
-  externalRef      String?  // Keep old field for backward compatibility
-  rawPayload       String?  // JSON string (payload đã mask)
-  webhookData      String?  // Keep old field for backward compatibility
-  redirectUrl      String?  // Keep old field for backward compatibility
-  source           String?  // Keep old field for backward compatibility
-  errorCode        String?
-  errorMessage     String?
-  metadata         Json?    // DEMO ONLY - Store gateway-specific data (QR data, card token, etc.)
-  expiresAt        DateTime? // Payment expiry time (10 minutes from creation)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  refunds          Refund[]
+  id              String    @id @default(cuid())
+  orderId         String
+  userId          String?
+  gateway         String    @default("mock") // 'mock', 'momo', 'vnpay', ...
+  method          String? // 'qrcode', 'app', 'card', ...
+  amount          Int
+  fee             Int       @default(0)
+  net             Int       @default(0) // New field, can be calculated from amount - fee
+  netAmount       Int? // Keep old field for backward compatibility
+  currency        String    @default("VND")
+  status          String // 'PENDING'|'SUCCESS'|'FAILED'|'CANCELED'|'REFUNDED'|'PARTIAL_REFUNDED'
+  providerTxId    String? // transaction id từ cổng
+  providerOrderId String? // order ref ở provider
+  externalRef     String? // Keep old field for backward compatibility
+  rawPayload      String? // JSON string (payload đã mask)
+  webhookData     String? // Keep old field for backward compatibility
+  redirectUrl     String? // Keep old field for backward compatibility
+  source          String? // Keep old field for backward compatibility
+  errorCode       String?
+  errorMessage    String?
+  metadata        Json? // DEMO ONLY - Store gateway-specific data (QR data, card token, etc.)
+  expiresAt       DateTime? // Payment expiry time (10 minutes from creation)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds         Refund[]
 
   @@index([orderId])
   @@index([gateway, status])
@@ -229,16 +272,16 @@ model Payment {
 }
 
 model WebhookEvent {
-  id           String   @id @default(cuid())
-  paymentId    String?
-  gateway      String
-  eventType    String
-  receivedAt   DateTime @default(now())
-  rawPayload   String   // JSON string
-  signature    String?
-  verified     Boolean  @default(false)
-  handled      Boolean  @default(false)
-  idempotencyKey String @unique // để chống xử lý lặp
+  id             String   @id @default(cuid())
+  paymentId      String?
+  gateway        String
+  eventType      String
+  receivedAt     DateTime @default(now())
+  rawPayload     String // JSON string
+  signature      String?
+  verified       Boolean  @default(false)
+  handled        Boolean  @default(false)
+  idempotencyKey String   @unique // để chống xử lý lặp
 
   @@index([gateway])
   @@index([receivedAt])
@@ -246,15 +289,15 @@ model WebhookEvent {
 }
 
 model Refund {
-  id            String   @id @default(cuid())
-  paymentId     String
-  amount        Int
-  reason        String?
-  status        String   // 'PENDING'|'SUCCESS'|'FAILED'
+  id               String   @id @default(cuid())
+  paymentId        String
+  amount           Int
+  reason           String?
+  status           String // 'PENDING'|'SUCCESS'|'FAILED'
   providerRefundId String?
-  idempotencyKey String? @unique
-  createdAt     DateTime @default(now())
-  payment       Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  idempotencyKey   String?  @unique
+  createdAt        DateTime @default(now())
+  payment          Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   @@index([paymentId])
   @@index([status])
@@ -262,23 +305,23 @@ model Refund {
 }
 
 model PaymentGateway {
-  id               Int      @id @default(autoincrement())
-  name             String
-  code             String   @unique   // 'mock','momo','vnpay'
-  enabled          Boolean  @default(true)
-  locked           Boolean  @default(false)
-  lockedReason     String?
-  feeType          String   @default("PERCENT")
-  feePercent       Float?
-  feeFixed         Int?
-  minFee           Int?
-  maxFee           Int?
-  vatOnFeePercent  Float?
-  methodOverrides  Json?
-  rules            Json?
-  configJson       String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              Int      @id @default(autoincrement())
+  name            String
+  code            String   @unique // 'mock','momo','vnpay'
+  enabled         Boolean  @default(true)
+  locked          Boolean  @default(false)
+  lockedReason    String?
+  feeType         String   @default("PERCENT")
+  feePercent      Float?
+  feeFixed        Int?
+  minFee          Int?
+  maxFee          Int?
+  vatOnFeePercent Float?
+  methodOverrides Json?
+  rules           Json?
+  configJson      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 enum EventStatus {
@@ -288,21 +331,21 @@ enum EventStatus {
 }
 
 model Event {
-  id          String      @id @default(cuid())
-  title       String
-  slug        String?     @unique
-  description String?
-  content     String?     // Rich text content
-  imageUrl    String?     // Main banner image
-  thumbnailUrl String?    // Thumbnail for list view
-  startDate   DateTime?
-  endDate     DateTime?
-  status      EventStatus @default(ACTIVE)
-  isFeatured  Boolean     @default(false)
-  viewCount   Int         @default(0)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  
+  id           String      @id @default(cuid())
+  title        String
+  slug         String?     @unique
+  description  String?
+  content      String? // Rich text content
+  imageUrl     String? // Main banner image
+  thumbnailUrl String? // Thumbnail for list view
+  startDate    DateTime?
+  endDate      DateTime?
+  status       EventStatus @default(ACTIVE)
+  isFeatured   Boolean     @default(false)
+  viewCount    Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
   @@index([status])
   @@index([isFeatured])
   @@index([startDate])
@@ -310,17 +353,17 @@ model Event {
 }
 
 model Banner {
-  id          String    @id @default(cuid())
-  title       String?   // Tên banner (optional)
-  imageUrl    String    // URL ảnh banner (required)
-  linkUrl     String?   // Link khi click (optional - có thể link đến /movie/:slug hoặc /event/:slug)
-  linkType    String?   // 'movie', 'event', 'external', null
-  order       Int       @default(0) // Thứ tự hiển thị
-  isActive    Boolean   @default(true)
-  startDate   DateTime? // Ngày bắt đầu hiển thị
-  endDate     DateTime? // Ngày kết thúc hiển thị
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        String    @id @default(cuid())
+  title     String? // Tên banner (optional)
+  imageUrl  String // URL ảnh banner (required)
+  linkUrl   String? // Link khi click (optional - có thể link đến /movie/:slug hoặc /event/:slug)
+  linkType  String? // 'movie', 'event', 'external', null
+  order     Int       @default(0) // Thứ tự hiển thị
+  isActive  Boolean   @default(true)
+  startDate DateTime? // Ngày bắt đầu hiển thị
+  endDate   DateTime? // Ngày kết thúc hiển thị
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([isActive])
   @@index([order])
@@ -330,43 +373,43 @@ model Banner {
 
 // RBAC Models
 model Role {
-  id          String    @id @default(cuid())
-  code        String    @unique // 'ADMIN', 'MANAGER', 'CONTENT_MANAGER', etc.
-  name        String    // Display name: 'Quản trị viên', 'Quản lý nội dung', etc.
-  description String?   // Mô tả ngắn
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
+  id          String   @id @default(cuid())
+  code        String   @unique // 'ADMIN', 'MANAGER', 'CONTENT_MANAGER', etc.
+  name        String // Display name: 'Quản trị viên', 'Quản lý nội dung', etc.
+  description String? // Mô tả ngắn
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   userRoles       UserRole[]
   rolePermissions RolePermission[]
-  
+
   @@index([code])
 }
 
 model Permission {
-  id          String    @id @default(cuid())
-  code        String    @unique // 'movies:view', 'payments:refund', etc.
-  resource    String    // 'movies', 'payments', 'users', etc.
-  action      String    // 'view', 'create', 'update', 'delete', 'refund', etc.
-  description String?   // Mô tả quyền
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
+  id          String   @id @default(cuid())
+  code        String   @unique // 'movies:view', 'payments:refund', etc.
+  resource    String // 'movies', 'payments', 'users', etc.
+  action      String // 'view', 'create', 'update', 'delete', 'refund', etc.
+  description String? // Mô tả quyền
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   rolePermissions RolePermission[]
-  
+
   @@index([resource])
   @@index([code])
 }
 
 model RolePermission {
-  id           String     @id @default(cuid())
+  id           String   @id @default(cuid())
   roleId       String
   permissionId String
-  createdAt    DateTime   @default(now())
-  
+  createdAt    DateTime @default(now())
+
   role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-  
+
   @@unique([roleId, permissionId])
   @@index([roleId])
   @@index([permissionId])
@@ -377,25 +420,25 @@ model UserRole {
   userId     String
   roleId     String
   assignedAt DateTime @default(now())
-  
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  
+
   @@unique([userId, roleId])
   @@index([userId])
   @@index([roleId])
 }
 
 model AdminActivity {
-  id        String   @id @default(cuid())
-  actorId   String
-  actor     User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
-  action    String   // 'create', 'update', 'delete', 'view', etc.
-  resource  String?  // 'movie', 'screening', 'banner', 'promotion', etc.
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  action     String // 'create', 'update', 'delete', 'view', etc.
+  resource   String? // 'movie', 'screening', 'banner', 'promotion', etc.
   resourceId String? // ID of the resource
-  metadata  Json?    // Additional data
-  createdAt DateTime @default(now())
-  
+  metadata   Json? // Additional data
+  createdAt  DateTime @default(now())
+
   @@index([actorId])
   @@index([resource, resourceId])
   @@index([createdAt])
