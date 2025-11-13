@@ -93,3 +93,35 @@ exports.delete = async (id) => {
   });
 };
 
+exports.create = async (data) => {
+  const { name, email, phone, password, role = 'USER' } = data;
+
+  if (!name || !email || !password) {
+    throw new Error('Name, email, and password are required');
+  }
+
+  // Hash password
+  const bcrypt = require('bcrypt');
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  return await prisma.user.create({
+    data: {
+      name,
+      email,
+      phone,
+      password: hashedPassword,
+      role, // Keep for backward compatibility
+    },
+    select: {
+      id: true,
+      uid: true,
+      name: true,
+      email: true,
+      phone: true,
+      role: true,
+      status: true,
+      createdAt: true,
+    },
+  });
+};
+

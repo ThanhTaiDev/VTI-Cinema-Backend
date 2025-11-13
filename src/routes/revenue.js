@@ -1,17 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const revenueController = require('../controllers/revenueController');
-const { authenticate, requireAdmin } = require('../middlewares/auth');
+const { authenticate } = require('../middlewares/auth');
+const { authorize } = require('../middlewares/authorize');
+const PERMISSIONS = require('../config/permissions');
 
 // Admin routes only
-router.get('/stats', authenticate, requireAdmin, revenueController.getStats);
-router.get('/daily', authenticate, requireAdmin, revenueController.getDailyRevenue);
-router.get('/comparison', authenticate, requireAdmin, revenueController.getComparison);
-router.get('/detailed', authenticate, requireAdmin, revenueController.getDetailed);
-router.get('/settlement', authenticate, requireAdmin, revenueController.getSettlement);
-router.get('/top-movies', authenticate, requireAdmin, revenueController.getTopMovies);
-router.get('/by-cinema', authenticate, requireAdmin, revenueController.getRevenueByCinema);
-router.get('/export', authenticate, requireAdmin, revenueController.exportReport);
+router.get('/stats', authenticate, authorize(PERMISSIONS.REVENUE_VIEW), revenueController.getStats);
+router.get('/daily', authenticate, authorize(PERMISSIONS.REVENUE_VIEW), revenueController.getDailyRevenue);
+router.get('/comparison', authenticate, authorize(PERMISSIONS.REVENUE_VIEW), revenueController.getComparison);
+router.get('/detailed', authenticate, authorize(PERMISSIONS.REVENUE_VIEW), revenueController.getDetailed);
+router.get('/settlement', authenticate, authorize(PERMISSIONS.REVENUE_VIEW), revenueController.getSettlement);
+router.get('/top-movies', authenticate, authorize(PERMISSIONS.REVENUE_VIEW), revenueController.getTopMovies);
+router.get('/by-cinema', authenticate, authorize(PERMISSIONS.REVENUE_VIEW), revenueController.getRevenueByCinema);
+router.get('/export', authenticate, authorize(PERMISSIONS.REVENUE_EXPORT), revenueController.exportReport);
 
 module.exports = router;
 

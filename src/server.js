@@ -25,6 +25,8 @@ const eventRoutes = require('./routes/events');
 const bannerRoutes = require('./routes/banners');
 const refundRoutes = require('./routes/refunds');
 const promotionRoutes = require('./routes/promotions');
+const rbacRoutes = require('./routes/rbac');
+const adminUsersRoutes = require('./routes/adminUsers');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/movies', movieRoutes);
@@ -42,6 +44,8 @@ app.use('/api/events', eventRoutes);
 app.use('/api/banners', bannerRoutes);
 app.use('/api', refundRoutes);
 app.use('/api/promotions', promotionRoutes);
+app.use('/api', rbacRoutes);
+app.use('/api/admin', adminUsersRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 

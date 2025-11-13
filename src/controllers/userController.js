@@ -48,3 +48,12 @@ exports.updateMe = async (req, res, next) => {
   }
 };
 
+exports.create = async (req, res, next) => {
+  try {
+    const user = await userService.create(req.body);
+    res.status(201).json(user);
+  } catch (err) {
+    next(err);
+  }
+};
+

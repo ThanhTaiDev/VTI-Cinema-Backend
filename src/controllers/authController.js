@@ -39,7 +39,20 @@ exports.resetPassword = async (req, res, next) => {
 exports.getCurrentUser = async (req, res, next) => {
   try {
     const user = await authService.getCurrentUser(req.user.id);
-    res.json(user);
+    
+    // Include permissions from RBAC
+    const rbacService = require('../services/rbac.service');
+    let permissions = [];
+    try {
+      permissions = await rbacService.getUserPermissions(req.user.id);
+    } catch (rbacErr) {
+      console.error('Error getting permissions:', rbacErr);
+    }
+    
+    res.json({
+      ...user,
+      permissions: permissions.map(p => p.code),
+    });
   } catch (err) {
     next(err);
   }

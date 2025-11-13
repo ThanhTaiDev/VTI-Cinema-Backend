@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const ticketController = require('../controllers/ticketController');
-const { authenticate, requireAdmin } = require('../middlewares/auth');
+const { authenticate } = require('../middlewares/auth');
+const { authorize } = require('../middlewares/authorize');
+const PERMISSIONS = require('../config/permissions');
 
 // User routes - Deprecated: Use Orders + Payments flow instead
 router.post('/', (req, res) => {
@@ -19,17 +21,17 @@ router.post('/:id/check-in', ticketController.checkIn);
 
 // Admin routes
 // IMPORTANT: Bulk routes must be defined BEFORE /:id routes to avoid route conflicts
-router.get('/', authenticate, requireAdmin, ticketController.getAll);
-router.get('/export', authenticate, requireAdmin, ticketController.exportToCSV);
-router.post('/bulk/lock', authenticate, requireAdmin, ticketController.bulkLock);
-router.post('/bulk/unlock', authenticate, requireAdmin, ticketController.bulkUnlock);
-router.post('/bulk/cancel', authenticate, requireAdmin, ticketController.bulkCancel);
-router.post('/bulk/refund', authenticate, requireAdmin, ticketController.bulkRefund);
-router.get('/:id', authenticate, requireAdmin, ticketController.getById);
-router.post('/:id/cancel', authenticate, requireAdmin, ticketController.cancel);
-router.post('/:id/lock', authenticate, requireAdmin, ticketController.lock);
-router.post('/:id/unlock', authenticate, requireAdmin, ticketController.unlock);
-router.post('/:id/refund', authenticate, requireAdmin, ticketController.refund);
+router.get('/', authenticate, authorize(PERMISSIONS.TICKETS_VIEW), ticketController.getAll);
+router.get('/export', authenticate, authorize(PERMISSIONS.TICKETS_EXPORT), ticketController.exportToCSV);
+router.post('/bulk/lock', authenticate, authorize(PERMISSIONS.TICKETS_MANAGE), ticketController.bulkLock);
+router.post('/bulk/unlock', authenticate, authorize(PERMISSIONS.TICKETS_MANAGE), ticketController.bulkUnlock);
+router.post('/bulk/cancel', authenticate, authorize(PERMISSIONS.TICKETS_MANAGE), ticketController.bulkCancel);
+router.post('/bulk/refund', authenticate, authorize(PERMISSIONS.TICKETS_REFUND), ticketController.bulkRefund);
+router.get('/:id', authenticate, authorize(PERMISSIONS.TICKETS_VIEW), ticketController.getById);
+router.post('/:id/cancel', authenticate, authorize(PERMISSIONS.TICKETS_MANAGE), ticketController.cancel);
+router.post('/:id/lock', authenticate, authorize(PERMISSIONS.TICKETS_MANAGE), ticketController.lock);
+router.post('/:id/unlock', authenticate, authorize(PERMISSIONS.TICKETS_MANAGE), ticketController.unlock);
+router.post('/:id/refund', authenticate, authorize(PERMISSIONS.TICKETS_REFUND), ticketController.refund);
 
 module.exports = router;
 
