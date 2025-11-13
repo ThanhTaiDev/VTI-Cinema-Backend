@@ -450,7 +450,7 @@ async function initPayment({ orderId, userId, method = null, gatewayCode = null 
         providerRef: providerTxId,
         qrCode: null,
       };
-    } else if (['momo', 'vnpay', 'zalopay', 'napasqr', 'payoo', 'shopeepay', 'smartpay'].includes(gatewayRecord.code.toLowerCase())) {
+    } else if (['momo', 'vnpay', 'zalopay', 'napasqr', 'shopeepay'].includes(gatewayRecord.code.toLowerCase())) {
       // QR Gateways: Generate QR code data
       const qrData = {
         gateway: gatewayRecord.code,
