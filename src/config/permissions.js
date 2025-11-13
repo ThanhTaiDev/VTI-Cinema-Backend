@@ -78,6 +78,9 @@ module.exports = {
   // Accounts
   ACCOUNTS_CREATE: 'accounts:create',
   ACCOUNTS_ASSIGN_ROLE: 'accounts:assign-role',
+
+  // Dashboard
+  DASHBOARD_VIEW: 'dashboard:view',
 };
 
 /**
