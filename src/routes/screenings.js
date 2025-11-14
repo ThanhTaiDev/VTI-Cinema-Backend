@@ -30,5 +30,27 @@ router.get(
   }
 );
 
+// NEW: Create holds for seats - Protected route for booking
+router.post(
+  '/:screeningId/holds',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const seatHoldService = require('../services/seatHoldService');
+      const { seatIds } = req.body;
+      const userId = req.user.id;
+
+      if (!seatIds || !Array.isArray(seatIds) || seatIds.length === 0) {
+        return res.status(400).json({ message: 'seatIds is required and must be an array' });
+      }
+
+      const result = await seatHoldService.createHolds(req.params.screeningId, seatIds, userId);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 module.exports = router;
 

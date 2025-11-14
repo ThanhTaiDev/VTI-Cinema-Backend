@@ -41,19 +41,18 @@ async function cleanupExpiredPayments() {
         },
       });
 
-      // Update orders to EXPIRED
+      // Update orders to EXPIRED and release holds
+      const orderService = require('../services/orderService');
       const orderIds = expiredPayments.map(p => p.orderId);
-      await prisma.order.updateMany({
-        where: {
-          id: {
-            in: orderIds,
-          },
-          status: 'PENDING',
-        },
-        data: {
-          status: 'EXPIRED',
-        },
-      });
+      
+      // Cancel each order individually to release holds
+      for (const orderId of orderIds) {
+        try {
+          await orderService.updateOrderStatus(orderId, 'EXPIRED');
+        } catch (err) {
+          console.error(`[CleanupExpiredPayments] Error expiring order ${orderId}:`, err);
+        }
+      }
 
       console.log(`[CleanupExpiredPayments] Updated ${expiredPayments.length} payments to FAILED`);
     }

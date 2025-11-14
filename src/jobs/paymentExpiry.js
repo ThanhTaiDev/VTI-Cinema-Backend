@@ -43,13 +43,15 @@ async function expirePayments() {
       },
     });
 
-    // Release seats for expired payments (update order status to CANCELLED)
+    // Release seats for expired payments (update order status to CANCELLED and release holds)
+    const orderService = require('../services/orderService');
     for (const payment of expiredPayments) {
       if (payment.order && payment.order.status === 'PENDING') {
-        await prisma.order.update({
-          where: { id: payment.orderId },
-          data: { status: 'CANCELLED' },
-        });
+        try {
+          await orderService.cancelOrder(payment.orderId);
+        } catch (err) {
+          console.error(`[Payment Expiry] Error cancelling order ${payment.orderId}:`, err);
+        }
       }
     }
 

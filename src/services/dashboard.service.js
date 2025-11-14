@@ -16,10 +16,10 @@ exports.getSummary = async () => {
 
   // Revenue calculations
   const [todayRevenue, weekRevenue, monthRevenue] = await Promise.all([
-    // Today revenue (from successful payments)
+    // Today revenue (from successful payments - SUCCESS or PAID)
     prisma.payment.aggregate({
       where: {
-        status: 'SUCCESS',
+        status: { in: ['SUCCESS', 'PAID'] }, // Include both SUCCESS and PAID
         createdAt: { gte: todayStart },
       },
       _sum: { amount: true },
@@ -27,7 +27,7 @@ exports.getSummary = async () => {
     // Week revenue
     prisma.payment.aggregate({
       where: {
-        status: 'SUCCESS',
+        status: { in: ['SUCCESS', 'PAID'] }, // Include both SUCCESS and PAID
         createdAt: { gte: weekAgo },
       },
       _sum: { amount: true },
@@ -35,18 +35,18 @@ exports.getSummary = async () => {
     // Month revenue
     prisma.payment.aggregate({
       where: {
-        status: 'SUCCESS',
+        status: { in: ['SUCCESS', 'PAID'] }, // Include both SUCCESS and PAID
         createdAt: { gte: monthStart },
       },
       _sum: { amount: true },
     }),
   ]);
 
-  // Tickets sold today
+  // Tickets sold today (only issued tickets - successfully paid)
   const todayTickets = await prisma.ticket.count({
     where: {
       createdAt: { gte: todayStart },
-      status: { not: 'CANCELED' },
+      status: 'ISSUED', // Only count issued tickets (successfully paid)
     },
   });
 
@@ -125,41 +125,72 @@ exports.getSummary = async () => {
  * Get revenue chart data
  */
 exports.getRevenueChart = async (days = 30) => {
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
+  const now = new Date();
+  // Start from (days - 1) days ago to include today
+  const startDate = new Date(now);
+  startDate.setDate(startDate.getDate() - (days - 1));
   startDate.setHours(0, 0, 0, 0);
 
-  // Get all successful payments in range
+  // Get all successful payments in range (SUCCESS or PAID)
   const payments = await prisma.payment.findMany({
     where: {
-      status: 'SUCCESS',
+      status: { in: ['SUCCESS', 'PAID'] }, // Include both SUCCESS and PAID
       createdAt: { gte: startDate },
     },
     select: {
       amount: true,
       createdAt: true,
+      status: true, // For debugging
     },
   });
 
-  // Group by date
+  console.log(`[Dashboard] getRevenueChart: Found ${payments.length} payments in last ${days} days`);
+  if (payments.length > 0) {
+    console.log(`[Dashboard] Sample payment:`, {
+      amount: payments[0].amount,
+      status: payments[0].status,
+      createdAt: payments[0].createdAt,
+    });
+  }
+
+  // Group by date (using local timezone, not UTC)
   const revenueByDate = {};
   payments.forEach(payment => {
-    const date = new Date(payment.createdAt).toISOString().split('T')[0];
-    revenueByDate[date] = (revenueByDate[date] || 0) + payment.amount;
+    // Convert to local date string (Vietnam timezone UTC+7)
+    const paymentDate = new Date(payment.createdAt);
+    // Get local date string (YYYY-MM-DD)
+    const year = paymentDate.getFullYear();
+    const month = String(paymentDate.getMonth() + 1).padStart(2, '0');
+    const day = String(paymentDate.getDate()).padStart(2, '0');
+    const date = `${year}-${month}-${day}`;
+    revenueByDate[date] = (revenueByDate[date] || 0) + (payment.amount || 0);
   });
 
-  // Convert to array format
+  console.log(`[Dashboard] Revenue by date:`, Object.keys(revenueByDate).length, 'days with data');
+  if (Object.keys(revenueByDate).length > 0) {
+    console.log(`[Dashboard] Sample dates:`, Object.keys(revenueByDate).slice(0, 5));
+  }
+
+  // Convert to array format (using local timezone)
   const result = [];
   for (let i = 0; i < days; i++) {
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
-    const dateStr = date.toISOString().split('T')[0];
+    // Get local date string (YYYY-MM-DD)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
     const revenue = revenueByDate[dateStr] || 0;
     result.push({
       date: dateStr,
       revenue: Number.isFinite(revenue) ? revenue : 0,
     });
   }
+
+  console.log(`[Dashboard] Result array length:`, result.length);
+  const totalRevenue = result.reduce((sum, d) => sum + d.revenue, 0);
+  console.log(`[Dashboard] Total revenue in result:`, totalRevenue);
 
   return result;
 };
@@ -168,40 +199,84 @@ exports.getRevenueChart = async (days = 30) => {
  * Get tickets chart data
  */
 exports.getTicketsChart = async (days = 30) => {
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
+  const now = new Date();
+  // Start from (days - 1) days ago to include today
+  const startDate = new Date(now);
+  startDate.setDate(startDate.getDate() - (days - 1));
   startDate.setHours(0, 0, 0, 0);
 
-  // Get all tickets in range
-  const tickets = await prisma.ticket.findMany({
+  // Get all tickets that have been issued (paid successfully)
+  // Count tickets by their order's payment date (more accurate than ticket.createdAt)
+  // First, get all successful payments in range
+  const payments = await prisma.payment.findMany({
     where: {
+      status: { in: ['SUCCESS', 'PAID'] },
       createdAt: { gte: startDate },
-      status: { not: 'CANCELED' },
     },
-    select: {
-      createdAt: true,
+    include: {
+      order: {
+        include: {
+          tickets: {
+            where: {
+              status: 'ISSUED', // Only count issued tickets
+            },
+            select: {
+              id: true,
+            },
+          },
+        },
+      },
     },
   });
 
-  // Group by date
+  console.log(`[Dashboard] getTicketsChart: Found ${payments.length} payments in last ${days} days`);
+  if (payments.length > 0) {
+    const totalTickets = payments.reduce((sum, p) => sum + (p.order?.tickets?.length || 0), 0);
+    console.log(`[Dashboard] Total ISSUED tickets from payments:`, totalTickets);
+  }
+
+  // Group tickets by payment date (when payment was successful)
+  // Use local timezone, not UTC
   const ticketsByDate = {};
-  tickets.forEach(ticket => {
-    const date = new Date(ticket.createdAt).toISOString().split('T')[0];
-    ticketsByDate[date] = (ticketsByDate[date] || 0) + 1;
+  payments.forEach(payment => {
+    // Convert to local date string (Vietnam timezone UTC+7)
+    const paymentDate = new Date(payment.createdAt);
+    // Get local date string (YYYY-MM-DD)
+    const year = paymentDate.getFullYear();
+    const month = String(paymentDate.getMonth() + 1).padStart(2, '0');
+    const day = String(paymentDate.getDate()).padStart(2, '0');
+    const date = `${year}-${month}-${day}`;
+    const ticketCount = payment.order?.tickets?.length || 0;
+    if (ticketCount > 0) {
+      ticketsByDate[date] = (ticketsByDate[date] || 0) + ticketCount;
+    }
   });
 
-  // Convert to array format
+  console.log(`[Dashboard] Tickets by date:`, Object.keys(ticketsByDate).length, 'days with data');
+  if (Object.keys(ticketsByDate).length > 0) {
+    console.log(`[Dashboard] Sample dates:`, Object.keys(ticketsByDate).slice(0, 5));
+  }
+
+  // Convert to array format (using local timezone)
   const result = [];
   for (let i = 0; i < days; i++) {
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
-    const dateStr = date.toISOString().split('T')[0];
+    // Get local date string (YYYY-MM-DD)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
     const tickets = ticketsByDate[dateStr] || 0;
     result.push({
       date: dateStr,
       tickets: Number.isFinite(tickets) ? tickets : 0,
     });
   }
+
+  console.log(`[Dashboard] Result array length:`, result.length);
+  const totalTickets = result.reduce((sum, d) => sum + d.tickets, 0);
+  console.log(`[Dashboard] Total tickets in result:`, totalTickets);
 
   return result;
 };
@@ -230,13 +305,20 @@ exports.getUpcomingScreenings = async (limit = 10) => {
           name: true,
         },
       },
-      seats: {
+      roomRef: {
         select: {
           id: true,
+          name: true,
+          seats: {
+            select: {
+              id: true,
+            },
+          },
         },
       },
       seatStatuses: {
         select: {
+          seatId: true,
           status: true,
         },
       },
@@ -248,10 +330,44 @@ exports.getUpcomingScreenings = async (limit = 10) => {
   });
 
   return screenings.map(screening => {
-    // Count total seats
-    const totalSeats = screening.seats.length;
+    // Count total seats from Room (new schema) or fallback to seatStatuses count
+    let totalSeats = 0;
+    if (screening.roomRef && screening.roomRef.seats) {
+      // New schema: seats belong to Room
+      totalSeats = screening.roomRef.seats.length;
+    } else {
+      // Fallback: count from seatStatuses (all statuses)
+      totalSeats = screening.seatStatuses.length;
+    }
+    
     // Count available seats
-    const availableSeats = screening.seatStatuses.filter(s => s.status === 'AVAILABLE').length;
+    // Logic: availableSeats = totalSeats - soldSeats - heldSeats
+    // Use unique seatIds to avoid counting duplicates
+    const uniqueSeatStatuses = new Map();
+    screening.seatStatuses.forEach(ss => {
+      // Use seatId as key to avoid duplicates
+      if (!uniqueSeatStatuses.has(ss.seatId)) {
+        uniqueSeatStatuses.set(ss.seatId, ss.status);
+      } else {
+        // If duplicate, keep the most restrictive status (SOLD > HELD > PENDING > AVAILABLE)
+        const currentStatus = uniqueSeatStatuses.get(ss.seatId);
+        const statusPriority = { 'SOLD': 4, 'HELD': 3, 'PENDING': 2, 'AVAILABLE': 1 };
+        if (statusPriority[ss.status] > statusPriority[currentStatus]) {
+          uniqueSeatStatuses.set(ss.seatId, ss.status);
+        }
+      }
+    });
+    
+    // Count sold and held seats (not available)
+    const soldSeats = Array.from(uniqueSeatStatuses.values()).filter(s => s === 'SOLD').length;
+    const heldSeats = Array.from(uniqueSeatStatuses.values()).filter(s => s === 'HELD' || s === 'PENDING').length;
+    
+    // Available seats = total - sold - held
+    const unavailableSeats = soldSeats + heldSeats;
+    const availableSeats = Math.max(0, totalSeats - unavailableSeats);
+    
+    // Get room name
+    const roomName = screening.roomRef?.name || screening.room || 'N/A';
     
     return {
       screeningId: screening.id,
@@ -259,7 +375,7 @@ exports.getUpcomingScreenings = async (limit = 10) => {
       cinemaName: screening.cinema.name,
       movieTitle: screening.movie.title,
       moviePoster: screening.movie.posterUrl,
-      room: screening.room,
+      room: roomName,
       seatsLeft: availableSeats,
       totalSeats: totalSeats || 0,
     };

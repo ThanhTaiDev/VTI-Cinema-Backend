@@ -92,6 +92,7 @@ model Screening {
   roomRef      Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
   seats        Seat[]
   seatStatuses SeatStatus[]
+  seatHolds    SeatHold[]
   orders       Order[]
   tickets      Ticket[]
 
@@ -162,6 +163,7 @@ model Seat {
   room        Room?        @relation(fields: [roomId], references: [id], onDelete: Cascade)
   seatType    SeatType?    @relation(fields: [seatTypeId], references: [id], onDelete: Restrict)
   statuses    SeatStatus[]
+  holds       SeatHold[]
 
   @@unique([roomId, row, col])
   @@index([screeningId])
@@ -169,14 +171,36 @@ model Seat {
   @@index([seatTypeId])
 }
 
+model SeatHold {
+  id          String    @id @default(cuid())
+  screeningId String
+  seatId      String
+  userId      String?
+  orderId     String?
+  status      String    @default("HOLD") // HOLD, CLAIMED, RELEASED, EXPIRED
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  seat        Seat      @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  screening   Screening @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  order       Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([screeningId, seatId])
+  @@index([screeningId, status])
+  @@index([userId])
+  @@index([orderId])
+  @@index([expiresAt])
+  @@index([status, expiresAt])
+}
+
 model SeatStatus {
   id          String    @id @default(cuid())
   seatId      String
   screeningId String
   status      SeatState @default(AVAILABLE)
-  holdToken   String?
-  holdUserId  String?
-  holdUntil   DateTime?
+  holdToken   String?  // DEPRECATED: Use SeatHold instead
+  holdUserId  String?  // DEPRECATED: Use SeatHold instead
+  holdUntil   DateTime? // DEPRECATED: Use SeatHold instead
   orderId     String?
   createdAt   DateTime  @default(now())
   seat        Seat      @relation(fields: [seatId], references: [id], onDelete: Cascade)
@@ -193,12 +217,13 @@ model Order {
   id               String       @id @default(cuid())
   userId           String
   screeningId      String
-  holdToken        String       @unique
+  holdToken        String       @unique // DEPRECATED: Use SeatHold instead
   status           String       @default("PENDING")
   seatIds          String
   pricingBreakdown String?
   totalAmount      Int
   voucherCode      String?
+  seatHolds        SeatHold[]
   idempotencyKey   String?      @unique
   qrCode           String?      @unique
   expiresAt        DateTime

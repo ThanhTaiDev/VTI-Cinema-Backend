@@ -95,6 +95,27 @@ exports.create = async (data) => {
   }
 
   // Create screening
+  // Parse price and basePrice to integers
+  // Handle empty strings and invalid values
+  let parsedPrice;
+  if (price !== null && price !== undefined && price !== '') {
+    const priceNum = parseInt(price, 10);
+    parsedPrice = isNaN(priceNum) ? (basePrice ? parseInt(basePrice, 10) : 90000) : priceNum;
+  } else {
+    parsedPrice = basePrice ? parseInt(basePrice, 10) : 90000;
+  }
+  
+  let parsedBasePrice = null;
+  if (basePrice !== null && basePrice !== undefined && basePrice !== '') {
+    const basePriceNum = parseInt(basePrice, 10);
+    parsedBasePrice = isNaN(basePriceNum) ? null : basePriceNum;
+  }
+
+  // Validate parsedPrice is a valid number
+  if (isNaN(parsedPrice) || parsedPrice <= 0) {
+    throw new Error('Invalid price value. Price must be a positive number.');
+  }
+
   const screeningData = {
     movieId,
     cinemaId,
@@ -102,11 +123,19 @@ exports.create = async (data) => {
     roomId: roomId || null,
     startTime: new Date(startTime),
     endTime: new Date(endTime),
-    price: price ? parseInt(price) : (basePrice || 90000), // Fallback to basePrice or default
-    basePrice: basePrice ? parseInt(basePrice) : null,
+    price: parsedPrice, // Always an integer
+    basePrice: parsedBasePrice,
     audio: audio || null,
     subtitle: subtitle || null,
   };
+
+  // Debug log
+  console.log('[ScreeningService] Creating screening with data:', {
+    movieId,
+    cinemaId,
+    price: parsedPrice,
+    basePrice: parsedBasePrice,
+  });
 
   const screening = await prisma.screening.create({
     data: screeningData,
@@ -133,14 +162,14 @@ exports.create = async (data) => {
 exports.update = async (id, data) => {
   const { 
     movieId, 
-    cinemaId, 
-    room, 
-    roomId, 
-    startTime, 
-    endTime, 
-    price, 
-    basePrice, 
-    audio, 
+    cinemaId,
+    room,
+    roomId,
+    startTime,
+    endTime,
+    price,
+    basePrice,
+    audio,
     subtitle 
   } = data;
   
@@ -165,8 +194,16 @@ exports.update = async (id, data) => {
   }
   if (startTime !== undefined) updateData.startTime = new Date(startTime);
   if (endTime !== undefined) updateData.endTime = new Date(endTime);
-  if (price !== undefined) updateData.price = parseInt(price);
-  if (basePrice !== undefined) updateData.basePrice = basePrice ? parseInt(basePrice) : null;
+  // Parse price to integer if provided
+  if (price !== undefined) {
+    updateData.price = parseInt(price, 10);
+  }
+  // Parse basePrice to integer if provided
+  if (basePrice !== undefined) {
+    updateData.basePrice = basePrice !== null && basePrice !== undefined 
+      ? parseInt(basePrice, 10) 
+      : null;
+  }
   if (audio !== undefined) updateData.audio = audio;
   if (subtitle !== undefined) updateData.subtitle = subtitle;
 

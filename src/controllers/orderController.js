@@ -38,3 +38,13 @@ exports.getOrderByQrCode = async (req, res, next) => {
   }
 };
 
+exports.cancel = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const order = await orderService.cancelOrder(id);
+    res.json(order);
+  } catch (err) {
+    next(err);
+  }
+};
+

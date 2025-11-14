@@ -1,28 +1,227 @@
 const prisma = require('../prismaClient');
 const crypto = require('crypto');
+const seatHoldService = require('./seatHoldService');
 
 /**
- * Create order from hold token
+ * Create order from holdIds (NEW FLOW)
+ * @param {Object} data - { holdIds, combos, voucherCode, idempotencyKey }
+ * @param {string} userId
  */
 exports.createOrder = async (data, userId) => {
   const {
-    holdToken,
-    seatIds,
+    holdIds, // NEW: Use holdIds instead of holdToken
+    holdToken, // DEPRECATED: Keep for backward compatibility
+    seatIds, // DEPRECATED: Keep for backward compatibility
     combos = [],
     voucherCode,
     idempotencyKey,
   } = data;
 
-  if (!holdToken || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0) {
-    throw new Error('Hold token and seat IDs are required');
+  // NEW FLOW: Use holdIds
+  if (holdIds && Array.isArray(holdIds) && holdIds.length > 0) {
+    return await createOrderFromHolds(holdIds, { combos, voucherCode, idempotencyKey }, userId);
   }
 
-  // Idempotency key is now required
+  // LEGACY FLOW: Use holdToken (backward compatibility)
+  if (holdToken && seatIds) {
+    return await createOrderFromToken(holdToken, seatIds, { combos, voucherCode, idempotencyKey }, userId);
+  }
+
+  throw new Error('Either holdIds (new) or holdToken+seatIds (legacy) is required');
+};
+
+/**
+ * NEW FLOW: Create order from holdIds
+ */
+async function createOrderFromHolds(holdIds, options, userId) {
+  const { combos = [], voucherCode, idempotencyKey } = options;
+
   if (!idempotencyKey) {
     throw new Error('Idempotency key is required');
   }
 
-  // Check idempotency - see if order with this idempotencyKey already exists
+  // Check idempotency
+  const existingOrder = await prisma.order.findUnique({
+    where: { idempotencyKey },
+  });
+  
+  if (existingOrder) {
+    return {
+      ...existingOrder,
+      pricingBreakdown: JSON.parse(existingOrder.pricingBreakdown || '{}'),
+      seatIds: JSON.parse(existingOrder.seatIds || '[]'),
+    };
+  }
+
+  // Use transaction - ALL operations must be atomic
+  return await prisma.$transaction(async (tx) => {
+    const now = new Date();
+
+    // Verify all holds are valid and belong to this user
+    const holds = await tx.seatHold.findMany({
+      where: {
+        id: { in: holdIds },
+        userId,
+        status: 'HOLD',
+        expiresAt: { gt: now },
+      },
+      include: {
+        seat: {
+          include: {
+            seatType: {
+              select: {
+                priceFactor: true,
+              },
+            },
+          },
+        },
+        screening: true,
+      },
+    });
+
+    if (holds.length !== holdIds.length) {
+      throw new Error('Some holds are invalid, expired, or do not belong to you');
+    }
+
+    // All holds must be for the same screening
+    const screeningIds = [...new Set(holds.map(h => h.screeningId))];
+    if (screeningIds.length !== 1) {
+      throw new Error('All holds must be for the same screening');
+    }
+
+    const screening = holds[0].screening;
+    if (!screening) {
+      throw new Error('Screening not found');
+    }
+
+    const screeningId = screening.id;
+
+    // Check if screening has already started
+    if (new Date(screening.startTime) < now) {
+      throw new Error('Screening has already started');
+    }
+
+    // Calculate pricing
+    const seatPrices = holds.map(hold => {
+      if (screening.basePrice && hold.seat?.seatType?.priceFactor) {
+        return Math.round(screening.basePrice * hold.seat.seatType.priceFactor);
+      } else {
+        return screening.price || 0;
+      }
+    });
+
+    const basePrice = seatPrices.reduce((sum, price) => sum + price, 0);
+    let discount = 0;
+    let voucherDiscount = 0;
+
+    // TODO: Apply voucher validation and discount
+    // if (voucherCode) {
+    //   const voucher = await validateVoucher(voucherCode, userId, screening);
+    //   if (voucher) {
+    //     voucherDiscount = calculateVoucherDiscount(voucher, basePrice);
+    //   }
+    // }
+
+    // Calculate combo prices
+    let comboTotal = 0;
+    // TODO: Calculate combo prices from combos array
+
+    const subtotal = basePrice + comboTotal;
+    const totalAmount = subtotal - discount - voucherDiscount;
+
+    const pricingBreakdown = {
+      basePrice,
+      comboTotal,
+      discount,
+      voucherDiscount,
+      subtotal,
+      total: totalAmount,
+    };
+
+    // Generate holdToken for backward compatibility (DEPRECATED)
+    const holdToken = crypto.randomBytes(32).toString('hex');
+    const seatIdsArray = holds.map(h => h.seatId);
+    const expiresAt = holds[0].expiresAt;
+
+    // Create order
+    const order = await tx.order.create({
+      data: {
+        userId,
+        screeningId,
+        holdToken, // DEPRECATED: Keep for backward compatibility
+        status: 'PENDING',
+        seatIds: JSON.stringify(seatIdsArray),
+        pricingBreakdown: JSON.stringify(pricingBreakdown),
+        totalAmount,
+        voucherCode,
+        idempotencyKey,
+        expiresAt,
+      },
+    });
+
+    // Claim holds to order (link holds to order and update status)
+    // Pass tx to avoid nested transaction
+    await seatHoldService.claimHoldsToOrder(holdIds, order.id, tx);
+
+    // Generate QR code
+    const orderQrCode = `ORDER-${order.id}-${crypto.randomBytes(16).toString('hex').toUpperCase()}`;
+    
+    const updatedOrder = await tx.order.update({
+      where: { id: order.id },
+      data: { qrCode: orderQrCode },
+    });
+
+    // Create tickets immediately with PENDING status
+    const ticketCode = crypto.randomBytes(16).toString('hex').toUpperCase();
+    const tickets = await Promise.all(
+      holds.map(async (hold, index) => {
+        const seat = hold.seat;
+        if (!seat) {
+          throw new Error(`Seat ${hold.seatId} not found`);
+        }
+
+        const individualTicketCode = `${ticketCode}-${index + 1}`;
+        const pricePerTicket = Math.round(totalAmount / holds.length);
+        
+        return await tx.ticket.create({
+          data: {
+            orderId: order.id,
+            screeningId,
+            seatId: seat.id,
+            seatRow: seat.row || null,
+            seatCol: seat.col,
+            userId,
+            status: 'PENDING',
+            price: pricePerTicket,
+            code: individualTicketCode,
+            qrCode: null,
+          },
+        });
+      })
+    );
+
+    return {
+      ...updatedOrder,
+      pricingBreakdown: JSON.parse(updatedOrder.pricingBreakdown),
+      seatIds: JSON.parse(updatedOrder.seatIds),
+      tickets,
+    };
+  }, {
+    timeout: 10000,
+  });
+}
+
+/**
+ * LEGACY FLOW: Create order from holdToken (backward compatibility)
+ */
+async function createOrderFromToken(holdToken, seatIds, options, userId) {
+  const { combos = [], voucherCode, idempotencyKey } = options;
+
+  if (!idempotencyKey) {
+    throw new Error('Idempotency key is required');
+  }
+
+  // Check idempotency
   const existingOrder = await prisma.order.findUnique({
     where: { idempotencyKey },
   });
@@ -37,10 +236,9 @@ exports.createOrder = async (data, userId) => {
 
   // Use transaction
   return await prisma.$transaction(async (tx) => {
-    // Get screening to verify
     const seatIdsArray = Array.isArray(seatIds) ? seatIds : JSON.parse(seatIds);
     
-    // First, get screeningId from SeatStatus (since Seat.screening might be null in new schema)
+    // Get screeningId from SeatStatus (legacy flow)
     const firstSeatStatus = await tx.seatStatus.findFirst({
       where: {
         seatId: seatIdsArray[0],
@@ -63,15 +261,13 @@ exports.createOrder = async (data, userId) => {
     }
 
     const screeningId = screening.id;
-
-    // Check if screening has already started
     const now = new Date();
+    
     if (new Date(screening.startTime) < now) {
       throw new Error('Screening has already started');
     }
 
-    // Verify seat statuses are still held by this user and token
-    // Get latest seat statuses for each seat
+    // Verify seat statuses (legacy)
     const seatStatuses = await Promise.all(
       seatIdsArray.map(async (seatId) => {
         const latestStatus = await tx.seatStatus.findFirst({
@@ -85,7 +281,6 @@ exports.createOrder = async (data, userId) => {
           },
         });
         
-        // Verify it's HELD by this user and token
         if (!latestStatus || 
             latestStatus.status !== 'HELD' || 
             latestStatus.holdToken !== holdToken ||
@@ -97,14 +292,12 @@ exports.createOrder = async (data, userId) => {
       })
     );
 
-    // Filter out null values
     const validSeatStatuses = seatStatuses.filter(Boolean);
 
     if (validSeatStatuses.length !== seatIdsArray.length) {
       throw new Error('Some seats are not held or hold has expired');
     }
 
-    // Check if hold has expired (now is already defined above)
     const expiredSeatStatuses = validSeatStatuses.filter(ss => 
       ss.holdUntil && new Date(ss.holdUntil) < now
     );
@@ -377,6 +570,90 @@ exports.getUserOrders = async (userId, status = null) => {
 };
 
 /**
+ * Cancel order and release holds
+ */
+exports.cancelOrder = async (orderId) => {
+  return await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    // Only allow canceling PENDING orders
+    if (order.status !== 'PENDING') {
+      throw new Error(`Cannot cancel order with status: ${order.status}`);
+    }
+
+    // Update order status
+    const updatedOrder = await tx.order.update({
+      where: { id: orderId },
+      data: { status: 'CANCELLED' },
+    });
+
+    // Release holds for this order - do it directly in transaction to avoid nested transaction
+    // Find all holds for this order
+    const holds = await tx.seatHold.findMany({
+      where: {
+        orderId,
+        status: { in: ['HOLD', 'CLAIMED'] },
+      },
+    });
+
+    if (holds.length > 0) {
+      // Update holds to RELEASED
+      await tx.seatHold.updateMany({
+        where: {
+          id: { in: holds.map(h => h.id) },
+        },
+        data: {
+          status: 'RELEASED',
+          orderId: null,
+        },
+      });
+
+      // Get all seat statuses that need to be updated (batch query)
+      const seatStatusPairs = holds.map(h => ({ screeningId: h.screeningId, seatId: h.seatId }));
+      const screeningIds = [...new Set(seatStatusPairs.map(p => p.screeningId))];
+      const seatIds = [...new Set(seatStatusPairs.map(p => p.seatId))];
+
+      // Find all relevant seat statuses in one query
+      const seatStatuses = await tx.seatStatus.findMany({
+        where: {
+          screeningId: { in: screeningIds },
+          seatId: { in: seatIds },
+          status: 'HELD',
+        },
+      });
+
+      // Filter to only those that match our holds
+      const statusesToUpdate = seatStatuses.filter(ss => 
+        seatStatusPairs.some(p => p.screeningId === ss.screeningId && p.seatId === ss.seatId)
+      );
+
+      if (statusesToUpdate.length > 0) {
+        // Batch update all seat statuses
+        await tx.seatStatus.updateMany({
+          where: {
+            id: { in: statusesToUpdate.map(ss => ss.id) },
+          },
+          data: {
+            status: 'AVAILABLE',
+            orderId: null,
+          },
+        });
+      }
+    }
+
+    return updatedOrder;
+  }, {
+    timeout: 30000, // Increase timeout to 30 seconds
+  });
+};
+
+/**
  * Update order status after payment
  */
 exports.updateOrderStatus = async (orderId, status) => {
@@ -394,6 +671,11 @@ exports.updateOrderStatus = async (orderId, status) => {
 
     if (!order) {
       throw new Error('Order not found');
+    }
+
+    // If cancelling/expiring, release holds
+    if (status === 'CANCELLED' || status === 'EXPIRED') {
+      await seatHoldService.releaseHoldsForOrder(orderId);
     }
 
     const updatedOrder = await tx.order.update({
