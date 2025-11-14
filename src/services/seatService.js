@@ -173,9 +173,93 @@ exports.getSeatsByScreening = async (screeningId) => {
     throw new Error('Screening has no room assigned and no rooms available in cinema')
   }
 
+  // Clean up orphaned HELD seats (seats held but no valid order exists)
+  // This happens when user holds seats, creates order, but then navigates away
+  // and the order gets deleted/cancelled but seats remain HELD
+  const now = new Date()
+  const heldSeatStatuses = screening.seatStatuses.filter(ss => ss.status === 'HELD')
+  if (heldSeatStatuses.length > 0) {
+    // Get full seat status details including holdUntil
+    const fullHeldStatuses = await prisma.seatStatus.findMany({
+      where: {
+        screeningId,
+        seatId: { in: heldSeatStatuses.map(ss => ss.seatId) },
+        status: 'HELD',
+      },
+      select: {
+        seatId: true,
+        orderId: true,
+        holdUntil: true,
+      },
+    })
+    
+    const heldOrderIds = fullHeldStatuses
+      .map(ss => ss.orderId)
+      .filter(Boolean) // Remove null/undefined
+    
+    // Check which orders still exist and are valid
+    let validOrderIds = new Set()
+    if (heldOrderIds.length > 0) {
+      const orders = await prisma.order.findMany({
+        where: {
+          id: { in: heldOrderIds },
+          status: { in: ['PENDING', 'PAID', 'CONFIRMED'] }, // Only valid order statuses
+        },
+        select: { id: true },
+      })
+      validOrderIds = new Set(orders.map(o => o.id))
+    }
+    
+    // Release seats that are HELD but:
+    // 1. Have orderId but order doesn't exist or is invalid (CANCELLED, EXPIRED, etc.)
+    // 2. Have no orderId AND holdUntil has expired
+    const orphanedSeatStatuses = fullHeldStatuses.filter(ss => {
+      // If has orderId but order is not valid, it's orphaned
+      if (ss.orderId && !validOrderIds.has(ss.orderId)) {
+        return true
+      }
+      // If no orderId and holdUntil expired, it's orphaned
+      if (!ss.orderId && ss.holdUntil && new Date(ss.holdUntil) < now) {
+        return true
+      }
+      return false
+    })
+    
+    if (orphanedSeatStatuses.length > 0) {
+      const orphanedSeatStatusIds = orphanedSeatStatuses.map(ss => ss.seatId)
+      // Update orphaned HELD seats to AVAILABLE
+      await prisma.seatStatus.updateMany({
+        where: {
+          screeningId,
+          seatId: { in: orphanedSeatStatusIds },
+          status: 'HELD',
+        },
+        data: {
+          status: 'AVAILABLE',
+          holdToken: null,
+          holdUserId: null,
+          holdUntil: null,
+          orderId: null,
+        },
+      }).catch(err => {
+        console.warn('[SeatService] Error releasing orphaned holds:', err)
+      })
+    }
+  }
+
+  // Re-fetch seat statuses after cleanup to get accurate status
+  const updatedSeatStatuses = await prisma.seatStatus.findMany({
+    where: { screeningId },
+    select: {
+      seatId: true,
+      status: true,
+      orderId: true,
+    },
+  })
+
   // Map seat statuses
   const statusMap = {}
-  screening.seatStatuses.forEach(ss => {
+  updatedSeatStatuses.forEach(ss => {
     statusMap[ss.seatId] = ss.status
   })
 
@@ -433,13 +517,14 @@ exports.holdSeats = async (screeningId, seatIds, userId) => {
 /**
  * Release expired seat holds
  * Updates SeatStatus records with status='HELD' and holdUntil < now to 'AVAILABLE'
+ * Also releases HELD seats that have no valid order (orphaned holds)
  */
 exports.releaseExpiredHolds = async () => {
   try {
     const now = new Date()
 
-    // Update expired holds to AVAILABLE directly
-    const updateResult = await prisma.seatStatus.updateMany({
+    // Step 1: Release expired holds (holdUntil < now)
+    const expiredResult = await prisma.seatStatus.updateMany({
       where: {
         status: 'HELD',
         holdUntil: {
@@ -451,11 +536,89 @@ exports.releaseExpiredHolds = async () => {
         holdToken: null,
         holdUserId: null,
         holdUntil: null,
+        orderId: null,
       },
     })
 
+    // Step 2: Release orphaned HELD seats (seats held but no valid order exists)
+    // Find all HELD seats with orderId
+    const heldSeatsWithOrders = await prisma.seatStatus.findMany({
+      where: {
+        status: 'HELD',
+        orderId: { not: null },
+      },
+      select: {
+        id: true,
+        seatId: true,
+        orderId: true,
+      },
+    })
+
+    if (heldSeatsWithOrders.length > 0) {
+      const orderIds = [...new Set(heldSeatsWithOrders.map(ss => ss.orderId).filter(Boolean))]
+      
+      // Check which orders still exist and are valid
+      const validOrders = await prisma.order.findMany({
+        where: {
+          id: { in: orderIds },
+          status: { in: ['PENDING', 'PAID', 'CONFIRMED'] }, // Only valid order statuses
+        },
+        select: { id: true },
+      })
+      
+      const validOrderIds = new Set(validOrders.map(o => o.id))
+      
+      // Find orphaned seat statuses (have orderId but order doesn't exist or is invalid)
+      const orphanedSeatStatusIds = heldSeatsWithOrders
+        .filter(ss => !validOrderIds.has(ss.orderId))
+        .map(ss => ss.id)
+      
+      if (orphanedSeatStatusIds.length > 0) {
+        await prisma.seatStatus.updateMany({
+          where: {
+            id: { in: orphanedSeatStatusIds },
+            status: 'HELD',
+          },
+          data: {
+            status: 'AVAILABLE',
+            holdToken: null,
+            holdUserId: null,
+            holdUntil: null,
+            orderId: null,
+          },
+        })
+      }
+      
+      // Also release HELD seats without orderId (shouldn't happen but cleanup anyway)
+      const heldSeatsWithoutOrders = await prisma.seatStatus.updateMany({
+        where: {
+          status: 'HELD',
+          orderId: null,
+          holdUntil: {
+            lt: now, // Only release if expired
+          },
+        },
+        data: {
+          status: 'AVAILABLE',
+          holdToken: null,
+          holdUserId: null,
+          holdUntil: null,
+        },
+      })
+      
+      return {
+        released: expiredResult.count + orphanedSeatStatusIds.length + heldSeatsWithoutOrders.count,
+        expired: expiredResult.count,
+        orphaned: orphanedSeatStatusIds.length,
+        withoutOrder: heldSeatsWithoutOrders.count,
+      }
+    }
+
     return {
-      released: updateResult.count,
+      released: expiredResult.count,
+      expired: expiredResult.count,
+      orphaned: 0,
+      withoutOrder: 0,
     }
   } catch (error) {
     console.error('[SeatService] Error releasing expired holds:', error)
