@@ -5,7 +5,8 @@ const { authenticate } = require('../middlewares/auth');
 const { authorize } = require('../middlewares/authorize');
 const PERMISSIONS = require('../config/permissions');
 
-// User route - Update own profile
+// User routes - Get and update own profile
+router.get('/me', authenticate, userController.getMe);
 router.put('/me', authenticate, userController.updateMe);
 
 // Admin routes only

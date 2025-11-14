@@ -806,15 +806,68 @@ exports.updateOrderStatus = async (orderId, status) => {
         return {
           ...updatedOrder,
           tickets,
+          userId: order.userId,
+          totalAmount: order.totalAmount,
         };
       }
     }
 
-    return updatedOrder;
+    return {
+      ...updatedOrder,
+      userId: order.userId,
+      totalAmount: order.totalAmount,
+    };
   }, {
     timeout: 10000,
   });
+
+  // After transaction commits, update user spending and check for rewards
+  // Only update if payment was successful and we're in 2025
+  if (status === 'PAID' && result.userId && result.totalAmount) {
+    const currentYear = new Date().getFullYear()
+    if (currentYear === 2025) {
+      const paymentAmount = result.totalAmount || 0
+      
+      // Update user spending and check rewards (async, don't wait)
+      const rewardService = require('./rewardService')
+      rewardService.updateUserSpending(result.userId, paymentAmount)
+        .then(({ newTotalSpending, rewards }) => {
+          console.log(`[OrderService] Updated user ${result.userId} spending to ${newTotalSpending}, created ${rewards.length} rewards`)
+          
+          // Create notification for successful payment
+          return prisma.notification.create({
+            data: {
+              userId: result.userId,
+              type: 'ORDER_PAID',
+              title: 'Thanh toán thành công',
+              message: `Đơn hàng #${orderId} đã được thanh toán thành công. Tổng tiền: ${formatCurrency(paymentAmount)}`,
+              metadata: {
+                orderId: orderId,
+                amount: paymentAmount,
+              },
+            },
+          })
+        })
+        .then(() => {
+          console.log(`[OrderService] Created payment notification for order ${orderId}`)
+        })
+        .catch(err => {
+          console.error('[OrderService] Error updating user spending or creating notification:', err)
+          // Don't throw - this is non-critical
+        })
+    }
+  }
+
+  return result;
 };
+
+// Helper function for formatting currency
+function formatCurrency(amount) {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+  }).format(amount)
+}
 
 /**
  * Get order by QR code (for check-in)

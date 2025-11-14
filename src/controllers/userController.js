@@ -39,6 +39,20 @@ exports.delete = async (req, res, next) => {
   }
 };
 
+exports.getMe = async (req, res, next) => {
+  try {
+    const user = await userService.getById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    // Remove sensitive data
+    const { password, ...userWithoutPassword } = user;
+    res.json(userWithoutPassword);
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.updateMe = async (req, res, next) => {
   try {
     const user = await userService.update(req.user.id, req.body);
