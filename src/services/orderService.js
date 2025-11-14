@@ -660,7 +660,7 @@ exports.cancelOrder = async (orderId) => {
  * Update order status after payment
  */
 exports.updateOrderStatus = async (orderId, status) => {
-  return await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: {
@@ -826,16 +826,25 @@ exports.updateOrderStatus = async (orderId, status) => {
 
   // After transaction commits, update user spending and check for rewards
   // Only update if payment was successful and we're in 2025
-  if (status === 'PAID' && result.userId && result.totalAmount) {
+  console.log(`[OrderService] updateOrderStatus - status: ${status}, result:`, {
+    hasResult: !!result,
+    userId: result?.userId,
+    totalAmount: result?.totalAmount,
+  })
+  
+  if (status === 'PAID' && result && result.userId && result.totalAmount) {
     const currentYear = new Date().getFullYear()
+    console.log(`[OrderService] Payment successful. Current year: ${currentYear}, checking if should update spending...`)
+    
     if (currentYear === 2025) {
       const paymentAmount = result.totalAmount || 0
+      console.log(`[OrderService] Updating user spending for user ${result.userId}, amount: ${paymentAmount}`)
       
       // Update user spending and check rewards (async, don't wait)
       const rewardService = require('./rewardService')
       rewardService.updateUserSpending(result.userId, paymentAmount)
         .then(({ newTotalSpending, rewards }) => {
-          console.log(`[OrderService] Updated user ${result.userId} spending to ${newTotalSpending}, created ${rewards.length} rewards`)
+          console.log(`[OrderService] ✅ Updated user ${result.userId} spending to ${newTotalSpending}, created ${rewards.length} rewards`)
           
           // Create notification for successful payment
           return prisma.notification.create({
@@ -855,10 +864,14 @@ exports.updateOrderStatus = async (orderId, status) => {
           console.log(`[OrderService] Created payment notification for order ${orderId}`)
         })
         .catch(err => {
-          console.error('[OrderService] Error updating user spending or creating notification:', err)
+          console.error('[OrderService] ❌ Error updating user spending or creating notification:', err)
           // Don't throw - this is non-critical
         })
+    } else {
+      console.log(`[OrderService] ⚠️ Not 2025 (current year: ${currentYear}), skipping spending update`)
     }
+  } else {
+    console.log(`[OrderService] ⚠️ Skipping spending update - status: ${status}, hasResult: ${!!result}, hasUserId: ${!!result?.userId}, hasTotalAmount: ${!!result?.totalAmount}`)
   }
 
   return result;

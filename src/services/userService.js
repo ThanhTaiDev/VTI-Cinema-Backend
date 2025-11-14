@@ -53,7 +53,9 @@ exports.getById = async (id) => {
       status: true,
       dateOfBirth: true,
       gender: true,
+      totalSpending2025: true,
       createdAt: true,
+      updatedAt: true,
     },
   });
 };
