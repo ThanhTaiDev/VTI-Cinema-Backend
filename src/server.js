@@ -28,7 +28,7 @@ const promotionRoutes = require('./routes/promotions');
 const rbacRoutes = require('./routes/rbac');
 const adminUsersRoutes = require('./routes/adminUsers');
 const dashboardRoutes = require('./routes/dashboard');
-// const roomRoutes = require('./routes/rooms'); // File removed, routes may be integrated elsewhere
+const roomRoutes = require('./routes/rooms');
 const rewardRoutes = require('./routes/rewards');
 
 app.use('/api/auth', authRoutes);
@@ -50,7 +50,7 @@ app.use('/api/promotions', promotionRoutes);
 app.use('/api', rbacRoutes);
 app.use('/api/admin', adminUsersRoutes);
 app.use('/api/admin/dashboard', dashboardRoutes);
-// app.use('/api/admin/rooms', roomRoutes); // Commented out - file removed
+app.use('/api/admin/rooms', roomRoutes);
 app.use('/api', rewardRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
