@@ -464,7 +464,13 @@ exports.getOrderById = async (orderId, userId) => {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: {
-      screening: true,
+      screening: {
+        include: {
+          movie: true,
+          cinema: true,
+          roomRef: true,
+        },
+      },
       seatStatuses: {
         include: {
           seat: {
@@ -474,6 +480,14 @@ exports.getOrderById = async (orderId, userId) => {
               col: true,
             },
           },
+        },
+      },
+      tickets: {
+        select: {
+          id: true,
+          seatRow: true,
+          seatCol: true,
+          price: true,
         },
       },
       payments: {
@@ -490,17 +504,6 @@ exports.getOrderById = async (orderId, userId) => {
   // Verify user owns this order
   if (order.userId !== userId) {
     throw new Error('Unauthorized');
-  }
-
-  // Fetch movie and cinema separately (no relation defined in schema)
-  if (order.screening) {
-    const [movie, cinema] = await Promise.all([
-      prisma.movie.findUnique({ where: { id: order.screening.movieId } }),
-      prisma.cinema.findUnique({ where: { id: order.screening.cinemaId } }),
-    ]);
-
-    order.screening.movie = movie;
-    order.screening.cinema = cinema;
   }
 
   // Map seatStatuses to seats for backward compatibility
