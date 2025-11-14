@@ -131,6 +131,74 @@ async function getPaymentById(id) {
     },
   });
   
+  if (!payment) {
+    return null;
+  }
+
+  // Check if order amount has changed (e.g., voucher applied after payment was created)
+  // If payment.amount differs from order.totalAmount, update payment
+  if (payment.order && payment.status === 'PENDING' && payment.amount !== payment.order.totalAmount) {
+    console.log(`[GetPaymentById] Order amount changed from ${payment.amount} to ${payment.order.totalAmount}, updating payment`);
+    
+    // Get gateway record
+    const gatewayRecord = await prisma.paymentGateway.findFirst({
+      where: { code: payment.gateway },
+    });
+    
+    if (gatewayRecord) {
+      // Recalculate fee with new order amount
+      const feeResult = computeFee(gatewayRecord, payment.order.totalAmount, payment.method);
+      
+      // Update metadata with new fee info
+      // Parse metadata if it's a string (Prisma JSON field)
+      let metadata = payment.metadata || {};
+      if (typeof metadata === 'string') {
+        try {
+          metadata = JSON.parse(metadata);
+        } catch (e) {
+          metadata = {};
+        }
+      }
+      metadata.vatSurcharge = feeResult.vatSurcharge || 0;
+      metadata.amountCharged = feeResult.amountCharged || payment.order.totalAmount;
+      metadata.feeBase = feeResult.feeBase || 0;
+      
+      // Update payment
+      const updatedPayment = await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          amount: payment.order.totalAmount,
+          fee: feeResult.fee,
+          net: feeResult.net,
+          netAmount: feeResult.net,
+          metadata: metadata,
+        },
+        include: {
+          order: {
+            include: {
+              screening: {
+                include: {
+                  movie: true,
+                  cinema: true,
+                },
+              },
+            },
+          },
+          refunds: {
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      });
+      
+      // Use updated payment
+      payment.amount = updatedPayment.amount;
+      payment.fee = updatedPayment.fee;
+      payment.net = updatedPayment.net;
+      payment.netAmount = updatedPayment.netAmount;
+      payment.metadata = updatedPayment.metadata;
+    }
+  }
+  
   // Also fetch webhook events for this payment (DEMO ONLY)
   const webhookEvents = await prisma.webhookEvent.findMany({
     where: { paymentId: id },
@@ -140,10 +208,6 @@ async function getPaymentById(id) {
   
   if (payment) {
     payment.webhookEvents = webhookEvents;
-  }
-
-  if (!payment) {
-    return null;
   }
 
   // Mask sensitive data
@@ -250,7 +314,6 @@ async function initPayment({ orderId, userId, method = null, gatewayCode = null 
   if (existingPayment) {
     // Use existing payment
     console.log(`[Payment Init] Using existing payment with gateway: ${existingPayment.gateway}`);
-    payment = existingPayment;
     
     // Get gateway record from database
     gatewayRecord = await prisma.paymentGateway.findFirst({
@@ -262,12 +325,75 @@ async function initPayment({ orderId, userId, method = null, gatewayCode = null 
       gatewayRecord = await prisma.paymentGateway.findFirst({ where: { code: 'mock' } });
     }
 
-    // Update method if changed
-    if (normalizedMethod && existingPayment.method !== normalizedMethod) {
+    // Check if order amount has changed (e.g., voucher applied)
+    // If order.totalAmount differs from payment.amount, recalculate payment
+    const orderAmountChanged = existingPayment.amount !== order.totalAmount;
+    
+    if (orderAmountChanged) {
+      console.log(`[Payment Init] Order amount changed from ${existingPayment.amount} to ${order.totalAmount}, recalculating payment`);
+      
+      // Recalculate fee with new order amount
+      const feeResult = computeFee(gatewayRecord, order.totalAmount, normalizedMethod);
+      
+      // Update payment with new amount and fees
+      const updateData = {
+        amount: order.totalAmount,
+        fee: feeResult.fee,
+        net: feeResult.net,
+        netAmount: feeResult.net,
+      };
+      
+      // Update method if changed
+      if (normalizedMethod && existingPayment.method !== normalizedMethod) {
+        updateData.method = normalizedMethod;
+      }
+      
+      // Update metadata with new fee info
+      const metadata = existingPayment.metadata || {};
+      metadata.vatSurcharge = feeResult.vatSurcharge || 0;
+      metadata.amountCharged = feeResult.amountCharged || order.totalAmount;
+      metadata.feeBase = feeResult.feeBase || 0;
+      updateData.metadata = metadata;
+      
       payment = await prisma.payment.update({
         where: { id: existingPayment.id },
-        data: { method: normalizedMethod },
+        data: updateData,
+        include: {
+          order: {
+            include: {
+              screening: {
+                include: {
+                  movie: true,
+                  cinema: true,
+                },
+              },
+            },
+          },
+        },
       });
+    } else {
+      // Order amount hasn't changed, just update method if needed
+      if (normalizedMethod && existingPayment.method !== normalizedMethod) {
+        payment = await prisma.payment.update({
+          where: { id: existingPayment.id },
+          data: { method: normalizedMethod },
+          include: {
+            order: {
+              include: {
+                screening: {
+                  include: {
+                    movie: true,
+                    cinema: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+      } else {
+        // No changes needed, use existing payment
+        payment = existingPayment;
+      }
     }
   } else {
     // Select gateway - use provided gatewayCode or auto-select

@@ -179,6 +179,7 @@ async function getUserRewards(userId, options = {}) {
       { expiresAt: { gt: new Date() } },
     ]
   }
+  // If includeExpired is true, get all rewards (ACTIVE, USED, EXPIRED)
 
   return await prisma.reward.findMany({
     where,
@@ -237,6 +238,99 @@ function getMilestones() {
   return REWARD_MILESTONES
 }
 
+/**
+ * Validate and get voucher by code
+ */
+async function validateVoucher(voucherCode, userId) {
+  try {
+    if (!voucherCode || !voucherCode.trim()) {
+      throw new Error('Mã voucher không được để trống')
+    }
+
+    const code = voucherCode.trim().toUpperCase()
+    
+    // Find voucher by code
+    const reward = await prisma.reward.findUnique({
+      where: { code },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    })
+
+    if (!reward) {
+      throw new Error('Mã voucher không hợp lệ')
+    }
+
+    // Check if voucher belongs to user
+    if (reward.userId !== userId) {
+      throw new Error('Mã voucher không thuộc về tài khoản của bạn')
+    }
+
+    // Check if voucher is active
+    if (reward.status !== 'ACTIVE') {
+      if (reward.status === 'USED') {
+        throw new Error('Mã voucher đã được sử dụng')
+      }
+      if (reward.status === 'EXPIRED') {
+        throw new Error('Mã voucher đã hết hạn')
+      }
+      throw new Error('Mã voucher không khả dụng')
+    }
+
+    // Check if voucher has expired
+    if (reward.expiresAt && new Date(reward.expiresAt) < new Date()) {
+      // Update status to EXPIRED
+      await prisma.reward.update({
+        where: { id: reward.id },
+        data: { status: 'EXPIRED' },
+      })
+      throw new Error('Mã voucher đã hết hạn')
+    }
+
+    // Check if voucher has value
+    if (!reward.value || reward.value <= 0) {
+      throw new Error('Mã voucher không có giá trị giảm giá')
+    }
+
+    return {
+      id: reward.id,
+      code: reward.code,
+      value: reward.value,
+      title: reward.title,
+      description: reward.description,
+      type: reward.type,
+      expiresAt: reward.expiresAt,
+    }
+  } catch (error) {
+    console.error('[RewardService] Error validating voucher:', error)
+    throw error
+  }
+}
+
+/**
+ * Mark voucher as used
+ */
+async function markVoucherAsUsed(rewardId, orderId) {
+  try {
+    return await prisma.reward.update({
+      where: { id: rewardId },
+      data: {
+        status: 'USED',
+        usedAt: new Date(),
+        usedOrderId: orderId,
+      },
+    })
+  } catch (error) {
+    console.error('[RewardService] Error marking voucher as used:', error)
+    throw error
+  }
+}
+
 module.exports = {
   updateUserSpending,
   checkAndCreateRewards,
@@ -245,6 +339,8 @@ module.exports = {
   markNotificationAsRead,
   markAllNotificationsAsRead,
   getMilestones,
+  validateVoucher,
+  markVoucherAsUsed,
   REWARD_MILESTONES,
 }
 

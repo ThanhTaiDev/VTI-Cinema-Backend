@@ -9,7 +9,7 @@ exports.getUserRewards = async (req, res, next) => {
     const { status, includeExpired } = req.query
 
     const rewards = await rewardService.getUserRewards(userId, {
-      status,
+      status: status || undefined, // Pass undefined if not provided
       includeExpired: includeExpired === 'true',
     })
 
@@ -78,6 +78,25 @@ exports.getRewardMilestones = async (req, res, next) => {
     res.json(milestones)
   } catch (error) {
     next(error)
+  }
+}
+
+/**
+ * Validate voucher code
+ */
+exports.validateVoucher = async (req, res, next) => {
+  try {
+    const userId = req.user.id
+    const { code } = req.body
+
+    if (!code) {
+      return res.status(400).json({ message: 'Mã voucher không được để trống' })
+    }
+
+    const voucher = await rewardService.validateVoucher(code, userId)
+    res.json(voucher)
+  } catch (error) {
+    res.status(400).json({ message: error.message || 'Mã voucher không hợp lệ' })
   }
 }
 

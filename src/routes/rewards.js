@@ -21,5 +21,8 @@ router.patch('/notifications/read-all', rewardController.markAllNotificationsAsR
 // Get reward milestones (public info)
 router.get('/milestones', rewardController.getRewardMilestones)
 
+// Validate voucher code
+router.post('/vouchers/validate', rewardController.validateVoucher)
+
 module.exports = router
 

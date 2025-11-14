@@ -113,14 +113,24 @@ async function createOrderFromHolds(holdIds, options, userId) {
     const basePrice = seatPrices.reduce((sum, price) => sum + price, 0);
     let discount = 0;
     let voucherDiscount = 0;
+    let voucherId = null;
 
-    // TODO: Apply voucher validation and discount
-    // if (voucherCode) {
-    //   const voucher = await validateVoucher(voucherCode, userId, screening);
-    //   if (voucher) {
-    //     voucherDiscount = calculateVoucherDiscount(voucher, basePrice);
-    //   }
-    // }
+    // Apply voucher validation and discount
+    if (voucherCode) {
+      try {
+        const rewardService = require('./rewardService');
+        const voucher = await rewardService.validateVoucher(voucherCode, userId);
+        if (voucher && voucher.value) {
+          // Voucher discount is fixed amount (value in VND)
+          voucherDiscount = Math.min(voucher.value, basePrice); // Can't discount more than order total
+          voucherId = voucher.id;
+          console.log(`[OrderService] Applied voucher ${voucherCode}: discount ${voucherDiscount} VND`);
+        }
+      } catch (err) {
+        console.error('[OrderService] Error validating voucher:', err);
+        throw new Error(err.message || 'Mã voucher không hợp lệ');
+      }
+    }
 
     // Calculate combo prices
     let comboTotal = 0;
@@ -158,6 +168,20 @@ async function createOrderFromHolds(holdIds, options, userId) {
         expiresAt,
       },
     });
+
+    // Store voucherId in pricingBreakdown metadata for later use
+    if (voucherId) {
+      const updatedBreakdown = {
+        ...pricingBreakdown,
+        voucherId, // Store voucher ID to mark as used later
+      };
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          pricingBreakdown: JSON.stringify(updatedBreakdown),
+        },
+      });
+    }
 
     // Claim holds to order (link holds to order and update status)
     // Pass tx to avoid nested transaction
@@ -804,6 +828,26 @@ exports.updateOrderStatus = async (orderId, status) => {
             })
           );
           console.log(`[OrderService] Successfully created ${tickets.length} new tickets with ISSUED status`);
+        }
+
+        // Mark voucher as used if order has voucher
+        if (order.voucherCode) {
+          try {
+            const pricingBreakdown = order.pricingBreakdown 
+              ? (typeof order.pricingBreakdown === 'string' 
+                  ? JSON.parse(order.pricingBreakdown) 
+                  : order.pricingBreakdown)
+              : {};
+            
+            if (pricingBreakdown.voucherId) {
+              const rewardService = require('./rewardService');
+              await rewardService.markVoucherAsUsed(pricingBreakdown.voucherId, order.id);
+              console.log(`[OrderService] Marked voucher ${order.voucherCode} as used for order ${order.id}`);
+            }
+          } catch (err) {
+            console.error('[OrderService] Error marking voucher as used:', err);
+            // Don't throw - this is non-critical
+          }
         }
 
         return {
