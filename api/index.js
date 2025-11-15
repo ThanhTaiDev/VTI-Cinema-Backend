@@ -15,6 +15,10 @@ app.use(cors(corsOptions));
 app.use(morgan('dev'));
 app.use(express.json());
 
+// Health check endpoint - must be FIRST, before any routes
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
 // Routes
 const authRoutes = require('../src/routes/auth');
 const movieRoutes = require('../src/routes/movies');
@@ -59,10 +63,6 @@ app.use('/api/admin', adminUsersRoutes);
 app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/admin/rooms', roomRoutes);
 app.use('/api', rewardRoutes);
-
-// Health check endpoint - must be before any catch-all routes
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
