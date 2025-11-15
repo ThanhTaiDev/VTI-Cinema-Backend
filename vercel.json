@@ -9,11 +9,11 @@
   "routes": [
     {
       "src": "/api/cron/(.*)",
-      "dest": "api/cron/$1.js"
+      "dest": "/api/cron/$1.js"
     },
     {
       "src": "/(.*)",
-      "dest": "api/index.js"
+      "dest": "/api/index.js"
     }
   ],
   "crons": [

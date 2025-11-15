@@ -74,5 +74,6 @@ app.use((err, req, res, next) => {
 // are disabled on Vercel serverless. Consider using Vercel Cron Jobs
 // or external cron service for these tasks.
 
+// Export for Vercel serverless
 module.exports = app;
 
