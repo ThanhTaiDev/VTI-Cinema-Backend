@@ -123,48 +123,33 @@ VTI Cinema là hệ thống quản lý rạp chiếu phim hoàn chỉnh bao gồ
         └── config/             # Configuration
 ```
 
-## 📦 Cài đặt
+## 📦 Cài đặt và Chạy dự án
 
 ### Yêu cầu
 - Node.js >= 18.x
 - npm hoặc yarn
-- PostgreSQL (cho production) hoặc SQLite (cho development)
+- SQLite (mặc định cho development) hoặc PostgreSQL (cho production)
 
-### 1. Clone repositories
+### Bước 1: Clone repository
 
 ```bash
-# Backend
 git clone https://github.com/ThanhTaiDev/Backend_WebsiteXemPhim.git
 cd Backend_WebsiteXemPhim
-
-# Frontend (terminal mới)
-git clone https://github.com/ThanhTaiDev/Frontend_WebsiteXemPhim.git
-cd Frontend_WebsiteXemPhim
 ```
 
-### 2. Cài đặt dependencies
+### Bước 2: Cài đặt dependencies
 
-**Backend:**
 ```bash
-cd Backend_WebsiteXemPhim
 npm install
 ```
 
-**Frontend:**
-```bash
-cd Frontend_WebsiteXemPhim
-npm install
-```
+### Bước 3: Cấu hình Environment Variables
 
-## ⚙️ Cấu hình
-
-### Backend
-
-Tạo file `.env` trong `Backend_WebsiteXemPhim/`:
+Tạo file `.env` trong thư mục `Backend_WebsiteXemPhim/`:
 
 ```env
-# Database
-DATABASE_URL="file:./prisma/dev.db"  # SQLite (dev) hoặc PostgreSQL URL (prod)
+# Database (SQLite cho development)
+DATABASE_URL="file:./prisma/dev.db"
 
 # JWT
 JWT_SECRET="your-secret-key-here-change-in-production"
@@ -182,51 +167,63 @@ VNPAY_TMN_CODE="your-tmn-code"
 MOMO_PARTNER_CODE="your-partner-code"
 ```
 
-### Frontend
+### Bước 4: Setup Database
 
-Tạo file `.env` trong `Frontend_WebsiteXemPhim/`:
-
-```env
-VITE_API_URL=http://localhost:3000/api
-```
-
-## 🚀 Chạy dự án
-
-### Development
-
-**Backend:**
 ```bash
-cd Backend_WebsiteXemPhim
-
-# Setup database
+# Chạy migrations để tạo database schema
 npm run migrate
+
+# Seed database với dữ liệu mẫu (admin, user, phim, rạp, ...)
 npm run seed
+```
 
-# Chạy server
+### Bước 5: Chạy Backend Server
+
+```bash
 npm run dev
 ```
 
-Server chạy tại: `http://localhost:3000`
+Backend API sẽ chạy tại: **`http://localhost:3000`**
 
-**Frontend:**
+### Bước 6: Chạy Frontend (Terminal mới)
+
+Mở terminal mới và chạy:
+
 ```bash
+# Clone Frontend (nếu chưa có)
+git clone https://github.com/ThanhTaiDev/Frontend_WebsiteXemPhim.git
 cd Frontend_WebsiteXemPhim
+
+# Cài đặt dependencies
+npm install
+
+# Tạo file .env
+echo 'VITE_API_URL=http://localhost:3000/api' > .env
+
+# Chạy Frontend
 npm run dev
 ```
 
-App chạy tại: `http://localhost:5173`
+Frontend sẽ chạy tại: **`http://localhost:5173`**
 
-### Production
+## 📊 Xem Database
 
-**Backend:**
+### Sử dụng Prisma Studio
+
 ```bash
-npm start
+npx prisma studio
 ```
 
-**Frontend:**
+Mở trình duyệt tại: **`http://localhost:5555`** để xem và quản lý database.
+
+## 🚀 Production Build
+
 ```bash
+# Build
 npm run build
-npm run preview
+
+# Chạy production
+npm start
 ```
 
 ## 🚀 Deploy
