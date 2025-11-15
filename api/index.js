@@ -19,6 +19,14 @@ app.use(express.json());
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+// Migration endpoint - must be before other /api routes
+const migrateHandler = require('./migrate');
+app.get('/api/migrate', migrateHandler);
+
+// Seed endpoint
+const seedHandler = require('./seed');
+app.get('/api/seed', seedHandler);
+
 // Routes
 const authRoutes = require('../src/routes/auth');
 const movieRoutes = require('../src/routes/movies');
