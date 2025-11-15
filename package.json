@@ -7,8 +7,10 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
     "seed": "node scripts/seed.js",
-    "seed:gateways": "node scripts/seedPaymentGateways.js"
+    "seed:gateways": "node scripts/seedPaymentGateways.js",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",

@@ -398,6 +398,22 @@ node scripts/deleteUser.js
 - Kiểm tra cấu hình gateway trong `.env`
 - Xem logs trong console để debug
 
+## 🚀 Deploy lên Vercel
+
+Xem hướng dẫn chi tiết trong file [../DEPLOY_VERCEL.md](../DEPLOY_VERCEL.md)
+
+### Tóm tắt:
+
+1. Chuyển database từ SQLite sang PostgreSQL
+2. Cập nhật `prisma/schema.prisma` (đổi provider thành `postgresql`)
+3. Deploy: `vercel`
+4. Cấu hình environment variables trong Vercel Dashboard
+5. Chạy migrations: `npx prisma migrate deploy`
+
+⚠️ **Lưu ý**: 
+- SQLite không hoạt động trên Vercel (filesystem read-only)
+- Background jobs cần sử dụng Vercel Cron Jobs (đã cấu hình trong `vercel.json`)
+
 ## 📞 Support
 
 Nếu gặp vấn đề, vui lòng kiểm tra:
@@ -405,6 +421,7 @@ Nếu gặp vấn đề, vui lòng kiểm tra:
 2. Database connection
 3. Environment variables
 4. API documentation
+5. [DEPLOY_VERCEL.md](../DEPLOY_VERCEL.md) cho hướng dẫn deploy
 
 ---
 

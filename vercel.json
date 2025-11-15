@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/cron/(.*)",
+      "dest": "api/cron/$1.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "api/index.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/cleanup-holds",
+      "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-tickets",
+      "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-payments",
+      "schedule": "*/1 * * * *"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
+
