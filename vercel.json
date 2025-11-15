@@ -16,20 +16,6 @@
       "dest": "/api/index.js"
     }
   ],
-  "crons": [
-    {
-      "path": "/api/cron/cleanup-holds",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/cleanup-tickets",
-      "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/cleanup-payments",
-      "schedule": "0 4 * * *"
-    }
-  ],
   "env": {
     "NODE_ENV": "production"
   }
