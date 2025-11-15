@@ -52,6 +52,10 @@ async function receiveWebhook({ gateway, headers, body }) {
     throw new Error(`Unknown gateway: ${gateway}`);
   }
 
+  // Check if this is a simulated webhook (from frontend) BEFORE verification
+  // For simulated webhooks (from frontend), skip signature verification
+  const isSimulated = headers['x-simulated-webhook'] || body.type === 'payment.succeeded' || body.status === 'SUCCESS';
+  
   // Create webhook event record (or update if exists but not handled)
   let webhookEvent = existingEvent;
   if (!webhookEvent) {
@@ -62,37 +66,46 @@ async function receiveWebhook({ gateway, headers, body }) {
         rawPayload: JSON.stringify(body),
         signature: headers['x-signature'] || headers['signature'] || null,
         idempotencyKey,
-        verified: false,
+        verified: isSimulated, // Simulated webhooks are auto-verified
         handled: false,
       },
     });
   }
 
-  // Verify webhook signature
-  const verifyResult = await gatewayInstance.verifyWebhook({ headers, body });
+  // Verify webhook signature (skip for simulated webhooks)
+  let verifyResult = { ok: true }; // Default to OK for simulated webhooks
+  
+  if (!isSimulated) {
+    verifyResult = await gatewayInstance.verifyWebhook({ headers, body });
 
-  if (!verifyResult.ok) {
-    // Verification failed, but still save event
+    if (!verifyResult.ok) {
+      // Verification failed, but still save event
+      await prisma.webhookEvent.update({
+        where: { id: webhookEvent.id },
+        data: {
+          verified: false,
+          handled: true, // Mark as handled to prevent retry
+        },
+      });
+
+      return {
+        success: false,
+        message: `Webhook verification failed: ${verifyResult.reason}`,
+      };
+    }
+  } else {
+    console.log('[Webhook] Simulated webhook detected, skipping signature verification');
+    // Mark as verified for simulated webhooks
     await prisma.webhookEvent.update({
       where: { id: webhookEvent.id },
       data: {
-        verified: false,
-        handled: true, // Mark as handled to prevent retry
+        verified: true,
       },
     });
-
-    return {
-      success: false,
-      message: `Webhook verification failed: ${verifyResult.reason}`,
-    };
   }
 
   // Parse webhook payload (DEMO ONLY - simplified parsing)
   let parsed;
-  
-  // For simulated webhooks (from frontend), parse directly from body
-  // For real webhooks, use gateway's parseWebhook method
-  const isSimulated = headers['x-simulated-webhook'] || body.type === 'payment.succeeded' || body.status === 'SUCCESS';
   
   if (isSimulated) {
     // Direct parsing for simulated webhooks
