@@ -66,7 +66,7 @@ async function receiveWebhook({ gateway, headers, body }) {
         rawPayload: JSON.stringify(body),
         signature: headers['x-signature'] || headers['signature'] || null,
         idempotencyKey,
-        verified: isSimulated, // Simulated webhooks are auto-verified
+        verified: Boolean(isSimulated), // Simulated webhooks are auto-verified (ensure boolean)
         handled: false,
       },
     });
@@ -95,11 +95,11 @@ async function receiveWebhook({ gateway, headers, body }) {
     }
   } else {
     console.log('[Webhook] Simulated webhook detected, skipping signature verification');
-    // Mark as verified for simulated webhooks
+    // Mark as verified for simulated webhooks (ensure boolean)
     await prisma.webhookEvent.update({
       where: { id: webhookEvent.id },
       data: {
-        verified: true,
+        verified: true, // Boolean true
       },
     });
   }
