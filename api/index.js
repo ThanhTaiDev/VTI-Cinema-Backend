@@ -49,12 +49,13 @@ app.use(express.json());
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-// Debug endpoint to check environment variables (remove in production)
+// Debug endpoint to check environment variables (must be before auth middleware)
 app.get('/api/debug/env', (req, res) => {
   res.json({
     FRONTEND_URL: process.env.FRONTEND_URL || 'NOT SET',
     API_BASE_URL: process.env.API_BASE_URL || 'NOT SET',
     NODE_ENV: process.env.NODE_ENV || 'NOT SET',
+    VITE_API_URL: process.env.VITE_API_URL || 'NOT SET',
   });
 });
 
