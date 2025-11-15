@@ -254,6 +254,9 @@ async function initPayment({ orderId, userId, method = null, gatewayCode = null 
     gatewayCode,
   });
   
+  // Debug: Log FRONTEND_URL
+  console.log('[Payment Service] FRONTEND_URL:', process.env.FRONTEND_URL || 'NOT SET (using fallback localhost:5173)');
+  
   // Get order
   const order = await prisma.order.findUnique({
     where: { id: orderId },
@@ -727,6 +730,10 @@ async function initPayment({ orderId, userId, method = null, gatewayCode = null 
     result.redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/${result.payment.id}/gateway/${result.payment.gateway}`;
     console.log('[Payment Init] Fixed redirectUrl:', result.redirectUrl);
   }
+  
+  // Debug: Log final redirectUrl
+  console.log('[Payment Init] Final redirectUrl:', result.redirectUrl);
+  console.log('[Payment Init] FRONTEND_URL env:', process.env.FRONTEND_URL || 'NOT SET');
   
   return result;
 }

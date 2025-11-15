@@ -49,6 +49,15 @@ app.use(express.json());
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
+// Debug endpoint to check environment variables (remove in production)
+app.get('/api/debug/env', (req, res) => {
+  res.json({
+    FRONTEND_URL: process.env.FRONTEND_URL || 'NOT SET',
+    API_BASE_URL: process.env.API_BASE_URL || 'NOT SET',
+    NODE_ENV: process.env.NODE_ENV || 'NOT SET',
+  });
+});
+
 // Migration endpoint - must be before other /api routes
 const migrateHandler = require('./migrate');
 app.get('/api/migrate', migrateHandler);
