@@ -8,7 +8,8 @@ const PERMISSIONS = require('../src/config/permissions');
 module.exports = async (req, res) => {
   // Bảo mật: Chỉ cho phép với secret key
   const secret = req.query.secret || req.headers['x-secret'];
-  const expectedSecret = process.env.MIGRATION_SECRET || process.env.SEED_SECRET;
+  // Ưu tiên SEED_SECRET cho endpoint này
+  const expectedSecret = process.env.SEED_SECRET || process.env.MIGRATION_SECRET;
   
   // Debug logging (sẽ xóa sau)
   console.log('🔍 Debug seed-permissions:');
