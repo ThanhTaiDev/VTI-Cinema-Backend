@@ -4,7 +4,7 @@ Hệ thống quản lý rạp chiếu phim đầy đủ chức năng với giao 
 
 ## 🌐 Live Demo
 
-- **Frontend**: [https://frontend-website-xem-phim.vercel.app](https://frontend-website-xem-phim.vercel.app)
+- **Frontend**: [https://website-xem-phim.vercel.app](https://website-xem-phim.vercel.app)
 - **Backend API**: [https://backend-website-xem-phim-v2.vercel.app](https://backend-website-xem-phim-v2.vercel.app)
 - **API Health Check**: [https://backend-website-xem-phim-v2.vercel.app/api/health](https://backend-website-xem-phim-v2.vercel.app/api/health)
 
@@ -233,8 +233,8 @@ npm start
 Dự án đã được deploy lên Vercel:
 
 - **Backend**: [https://backend-website-xem-phim-v2.vercel.app](https://backend-website-xem-phim-v2.vercel.app)
-- **Frontend**: [https://frontend-website-xem-phim.vercel.app](https://frontend-website-xem-phim.vercel.app)
-
+- **Frontend**: [https://website-xem-phim.vercel.app](https://website-xem-phim.vercel.app)
+- **Database**: https://dbdiagram.io/d/Cinema-Database-6918d4fc6735e11170fb0d21
 ### Environment Variables trên Vercel
 
 **Backend:**
