@@ -67,6 +67,11 @@ app.get('/api/migrate', migrateHandler);
 const seedHandler = require('./seed');
 app.get('/api/seed', seedHandler);
 
+// Seed permissions endpoint
+const seedPermissionsHandler = require('./seed-permissions');
+app.get('/api/seed-permissions', seedPermissionsHandler);
+app.post('/api/seed-permissions', seedPermissionsHandler);
+
 // Routes
 const authRoutes = require('../src/routes/auth');
 const movieRoutes = require('../src/routes/movies');

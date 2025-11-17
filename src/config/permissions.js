@@ -76,11 +76,49 @@ module.exports = {
   PERMISSIONS_DELETE: 'permissions:delete',
 
   // Accounts
+  ACCOUNTS_VIEW: 'accounts:view',
   ACCOUNTS_CREATE: 'accounts:create',
+  ACCOUNTS_UPDATE: 'accounts:update',
+  ACCOUNTS_DELETE: 'accounts:delete',
   ACCOUNTS_ASSIGN_ROLE: 'accounts:assign-role',
+  ACCOUNTS_MANAGE: 'accounts:manage', // Alias for create/update/delete/assign-role
+
+  // Rooms (Phòng chiếu)
+  ROOMS_VIEW: 'rooms:view',
+  ROOMS_CREATE: 'rooms:create',
+  ROOMS_UPDATE: 'rooms:update',
+  ROOMS_DELETE: 'rooms:delete',
+  ROOMS_MANAGE: 'rooms:manage', // Alias for create/update/delete
+
+  // Seats
+  SEATS_VIEW: 'seats:view',
+  SEATS_CREATE: 'seats:create',
+  SEATS_UPDATE: 'seats:update',
+  SEATS_DELETE: 'seats:delete',
+  SEATS_MANAGE: 'seats:manage', // Alias for create/update/delete
+
+  // Orders
+  ORDERS_VIEW: 'orders:view',
+  ORDERS_CREATE: 'orders:create',
+  ORDERS_UPDATE: 'orders:update',
+  ORDERS_DELETE: 'orders:delete',
+  ORDERS_REFUND: 'orders:refund',
+  ORDERS_MANAGE: 'orders:manage', // Alias for create/update/delete/refund
+
+  // Reviews
+  REVIEWS_VIEW: 'reviews:view',
+  REVIEWS_CREATE: 'reviews:create',
+  REVIEWS_UPDATE: 'reviews:update',
+  REVIEWS_DELETE: 'reviews:delete',
+  REVIEWS_MANAGE: 'reviews:manage', // Alias for create/update/delete
 
   // Dashboard
   DASHBOARD_VIEW: 'dashboard:view',
+
+  // Configuration/Settings
+  CONFIG_VIEW: 'config:view',
+  CONFIG_UPDATE: 'config:update',
+  CONFIG_MANAGE: 'config:manage', // Alias for view/update
 };
 
 /**
