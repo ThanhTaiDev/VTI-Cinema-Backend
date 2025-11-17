@@ -10,10 +10,26 @@ module.exports = async (req, res) => {
   const secret = req.query.secret || req.headers['x-secret'];
   const expectedSecret = process.env.MIGRATION_SECRET || process.env.SEED_SECRET;
   
+  // Debug logging (sẽ xóa sau)
+  console.log('🔍 Debug seed-permissions:');
+  console.log('  - Secret from request:', secret ? `${secret.substring(0, 8)}...` : 'MISSING');
+  console.log('  - MIGRATION_SECRET:', process.env.MIGRATION_SECRET ? 'SET' : 'NOT SET');
+  console.log('  - SEED_SECRET:', process.env.SEED_SECRET ? 'SET' : 'NOT SET');
+  console.log('  - Expected secret:', expectedSecret ? `${expectedSecret.substring(0, 8)}...` : 'MISSING');
+  
   if (!expectedSecret || secret !== expectedSecret) {
     return res.status(401).json({ 
       error: 'Unauthorized',
-      message: 'Missing or invalid secret key. Provide ?secret=YOUR_SECRET or x-secret header'
+      message: 'Missing or invalid secret key. Provide ?secret=YOUR_SECRET or x-secret header',
+      debug: process.env.NODE_ENV === 'development' ? {
+        hasSecret: !!secret,
+        hasExpectedSecret: !!expectedSecret,
+        secretMatch: secret === expectedSecret,
+        envVars: {
+          MIGRATION_SECRET: process.env.MIGRATION_SECRET ? 'SET' : 'NOT SET',
+          SEED_SECRET: process.env.SEED_SECRET ? 'SET' : 'NOT SET'
+        }
+      } : undefined
     });
   }
 
